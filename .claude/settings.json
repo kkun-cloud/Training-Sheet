@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/auto-backup.sh\"",
+            "timeout": 60,
+            "statusMessage": "自動バックアップ中..."
+          }
+        ]
+      }
+    ]
+  }
+}
