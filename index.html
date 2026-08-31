@@ -3,9 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#0f0e0c">
+<meta name="theme-color" content="#0b111e">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TRAINING.LOG">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon.png">
 <title>TRAINING.LOG</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,13 +24,15 @@
   --gold:#f0b429; --green:#2fbf71; --yellow:#e7b416; --red:#ef5561;
   --serif:'Noto Sans JP',sans-serif; --sans:'Noto Sans JP',sans-serif; --mono:'JetBrains Mono',monospace;
 }
-*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-html{scroll-behavior:auto;}
+/* touch-action:manipulation = ダブルタップズームだけを無効化（ピンチズームは残す） */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+html{scroll-behavior:auto;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.55;min-height:100vh;padding-bottom:calc(112px + env(safe-area-inset-bottom));}
-button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer;}
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;}
 button > *{pointer-events:none;}
 button svg, button span, button em, button b, button i{pointer-events:none;}
-input,select,textarea{font-family:var(--mono);font-size:15px;color:var(--text);background:var(--bg-elev);border:1px solid var(--line);border-radius:12px;outline:none;}
+/* iOSは font-size < 16px の入力欄にフォーカスすると自動ズームするため 16px を下限にする */
+input,select,textarea{font-family:var(--mono);font-size:16px;color:var(--text);background:var(--bg-elev);border:1px solid var(--line);border-radius:12px;outline:none;}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);}
 input[type=number]{-moz-appearance:textfield;}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
@@ -43,6 +50,11 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 
 /* ===== banners ===== */
 .bk-banner{background:rgba(231,180,22,0.09);border:1px solid rgba(231,180,22,0.5);border-radius:14px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--yellow);}
+.rc-banner{background:rgba(47,191,113,0.10);border:1px solid rgba(47,191,113,0.55);border-radius:14px;padding:12px 14px;margin:0 0 14px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--green);line-height:1.5;}
+.rc-banner.warn{background:rgba(239,85,97,0.10);border-color:rgba(239,85,97,0.55);color:var(--red);}
+.rc-banner span{flex:1;}
+.rc-banner button{flex:0 0 auto;min-height:38px;padding:0 14px;border-radius:10px;background:currentColor;font-weight:800;font-size:12px;}
+.rc-banner button b{color:var(--bg);}
 .bk-banner button{background:var(--yellow);color:#171408;font-weight:700;font-size:12px;padding:8px 14px;border-radius:99px;flex-shrink:0;min-height:38px;}
 .ovr-banner{background:rgba(79,141,249,0.08);border:1px solid var(--accent-dim);border-radius:14px;padding:9px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--accent);}
 .ovr-banner b{font-family:var(--mono);font-size:10px;letter-spacing:2px;margin-right:6px;}
@@ -111,7 +123,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .cond-pill.active{border-color:var(--accent);color:#fff;background:var(--accent-dim);}
 .memo-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
 .memo-row label{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--text-faint);}
-.memo-row input{flex:1;min-height:42px;padding:0 12px;font-family:var(--sans);font-size:13px;text-align:left;}
+.memo-row input{flex:1;min-height:42px;padding:0 12px;font-family:var(--sans);font-size:16px;text-align:left;}
 .calc-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);background:var(--bg-elev);border-radius:12px;padding:8px 12px;margin-bottom:10px;min-height:36px;flex-wrap:wrap;}
 .calc-row .c1rm{color:var(--text);}
 .timer-row{display:flex;gap:6px;flex-wrap:wrap;}
@@ -288,7 +300,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .modal h3{font-size:16px;font-weight:800;margin-bottom:14px;letter-spacing:0.5px;}
 .m-field{margin-bottom:12px;}
 .m-field label{display:block;font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--text-faint);margin-bottom:5px;}
-.m-field input,.m-field select{width:100%;min-height:46px;padding:0 14px;font-size:14px;}
+.m-field input,.m-field select{width:100%;min-height:46px;padding:0 14px;font-size:16px;}
 .m-field input:disabled{opacity:0.45;}
 .m-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .chip-wrap{display:flex;flex-wrap:wrap;gap:6px;}
@@ -323,6 +335,7 @@ textarea.imp-ta{width:100%;min-height:120px;padding:10px;font-size:12px;resize:v
     <h1>TRAINING<span>.LOG</span></h1>
     <div class="head-date" id="headDate"></div>
   </header>
+  <div id="recoverRoot"></div>
   <main>
     <section id="view-today" class="view active"></section>
     <section id="view-history" class="view"></section>
@@ -496,9 +509,72 @@ function beep(freq,dur){
   }catch(e){}
 }
 
+/* ================= DURABLE STORAGE =================
+   iOS（特にホーム画面に追加したWebアプリ）では localStorage が
+   OS都合で消去されることがある。対策として
+   1) IndexedDB に同じ内容をミラーし、消えていたら自動復元
+   2) navigator.storage.persist() で消去対象から外すよう要求
+   3) localStorage が空でも「初期データで黙って上書き」しない
+   の3段構えにする。 */
+const IDB_NAME='training_log_db', IDB_STORE='kv';
+let idbPromise=null;
+function idbOpen(){
+  if(idbPromise)return idbPromise;
+  idbPromise=new Promise(res=>{
+    let req;
+    try{req=indexedDB.open(IDB_NAME,1);}catch(e){return res(null);}
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains(IDB_STORE))db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess=()=>res(req.result);
+    req.onerror=()=>res(null);
+    req.onblocked=()=>res(null);
+  });
+  return idbPromise;
+}
+function idbSet(key,val){
+  return idbOpen().then(db=>{
+    if(!db)return false;
+    return new Promise(res=>{
+      try{
+        const tx=db.transaction(IDB_STORE,'readwrite');
+        tx.objectStore(IDB_STORE).put(val,key);
+        tx.oncomplete=()=>res(true);
+        tx.onerror=()=>res(false);
+        tx.onabort=()=>res(false);
+      }catch(e){res(false);}
+    });
+  }).catch(()=>false);
+}
+function idbGet(key){
+  return idbOpen().then(db=>{
+    if(!db)return null;
+    return new Promise(res=>{
+      try{
+        const tx=db.transaction(IDB_STORE,'readonly');
+        const r=tx.objectStore(IDB_STORE).get(key);
+        r.onsuccess=()=>res(r.result===undefined?null:r.result);
+        r.onerror=()=>res(null);
+      }catch(e){res(null);}
+    });
+  }).catch(()=>null);
+}
+
 /* ================= STORAGE ================= */
-function persistRecords(){localStorage.setItem(LS_KEY,JSON.stringify(records));}
-function savePrefs(){localStorage.setItem(LS_PREFS,JSON.stringify(prefs));}
+let lastPersistOk=true;
+function persistRecords(){
+  const json=JSON.stringify(records);
+  let ok=true;
+  try{localStorage.setItem(LS_KEY,json);}catch(e){ok=false;}
+  lastPersistOk=ok;
+  // IndexedDBへミラー（非同期・失敗しても致命ではない）
+  idbSet('records',records);
+  idbSet('stamp',{at:Date.now(),n:records.length});
+  if(!ok)toast('⚠ 端末に保存できませんでした。今すぐエクスポートしてください');
+  return ok;
+}
+function savePrefs(){try{localStorage.setItem(LS_PREFS,JSON.stringify(prefs));}catch(e){}idbSet('prefs',prefs);}
 function saveDraft(){
   try{localStorage.setItem(LS_DRAFT,JSON.stringify({date:T.date,overrideDay:T.overrideDay,cards:T.cards}));}catch(e){}
 }
@@ -521,17 +597,105 @@ function seedToRecords(){
   }).sort(byDate);
 }
 
+// localStorage が空だった＝初期データで埋めた、という状態を示すフラグ。
+// この場合 IndexedDB 側に本物のデータが残っていないかを起動後に確認する。
+let seededFromDefaults=false;
+
+function normalizeRecords(list){
+  let changed=false;
+  list.forEach(r=>{if(!r.protocol){r.protocol=inferProtocol(r);changed=true;}});
+  list.sort(byDate);
+  return changed;
+}
+
 function loadAll(){
   let recs=null;
   try{recs=JSON.parse(localStorage.getItem(LS_KEY));}catch(e){}
-  if(!Array.isArray(recs)){recs=seedToRecords();records=recs;persistRecords();}
-  else records=recs;
-  let changed=false;
-  records.forEach(r=>{if(!r.protocol){r.protocol=inferProtocol(r);changed=true;}});
-  records.sort(byDate);
-  if(changed)persistRecords();
+  if(!Array.isArray(recs)){
+    // ここで persistRecords() しない。IndexedDBの確認が済むまで初期データを確定させない
+    records=seedToRecords();
+    seededFromDefaults=true;
+  }else{
+    records=recs;
+    const changed=normalizeRecords(records);
+    if(changed)persistRecords();
+  }
+  if(seededFromDefaults)normalizeRecords(records);
   try{prefs=JSON.parse(localStorage.getItem(LS_PREFS))||{};}catch(e){prefs={};}
   migratePrefsProgram();
+}
+
+function showRecoverBanner(html,warn){
+  const el=$('#recoverRoot');
+  if(el)el.innerHTML=`<div class="rc-banner${warn?' warn':''}">${html}</div>`;
+}
+
+// 起動直後に IndexedDB と付き合わせ、localStorage が消えていれば復元する
+async function reconcileStorage(){
+  let idbRecs=null,stamp=null;
+  try{
+    idbRecs=await idbGet('records');
+    stamp=await idbGet('stamp');
+  }catch(e){}
+  const haveIdb=Array.isArray(idbRecs)&&idbRecs.length>0;
+
+  if(seededFromDefaults){
+    if(haveIdb){
+      // localStorage が消去されていた → ミラーから復元
+      records=idbRecs;
+      normalizeRecords(records);
+      seededFromDefaults=false;
+      try{localStorage.setItem(LS_KEY,JSON.stringify(records));}catch(e){}
+      const when=stamp&&stamp.at?new Date(stamp.at).toLocaleDateString('ja-JP'):'—';
+      renderToday();
+      showRecoverBanner(`<span>端末のブラウザ保存領域が消えていたため、バックアップ領域から <b>${records.length}件</b>（最終保存 ${when}）を復元しました。</span><button id="rcDismiss"><b>OK</b></button>`);
+    }else{
+      // 本当に初回。ここで初めて初期データを確定させる
+      persistRecords();
+    }
+    return;
+  }
+
+  if(!haveIdb){
+    // 初回のミラー作成（この更新より前から使っている場合）
+    persistRecords();
+    return;
+  }
+  if(idbRecs.length>records.length){
+    // localStorage 側だけが巻き戻っている
+    const diff=idbRecs.length-records.length;
+    showRecoverBanner(`<span>バックアップ領域に <b>${diff}件</b> 多く記録が残っています。復元しますか？</span><button id="rcRestore"><b>復元</b></button>`,true);
+    window.__rcPending=idbRecs;
+  }else{
+    idbSet('records',records);
+  }
+}
+
+function bindRecover(){
+  $('#recoverRoot').addEventListener('click',e=>{
+    const b=e.target.closest('button');
+    if(!b)return;
+    if(b.id==='rcDismiss'){$('#recoverRoot').innerHTML='';return;}
+    if(b.id==='rcRestore'&&window.__rcPending){
+      records=window.__rcPending;
+      normalizeRecords(records);
+      persistRecords();
+      window.__rcPending=null;
+      $('#recoverRoot').innerHTML='';
+      renderToday();
+      toast(`${records.length}件を復元しました`);
+    }
+  });
+}
+
+// ストレージを「消去対象外」にするようOSに要求する
+async function requestPersistentStorage(){
+  try{
+    if(navigator.storage&&navigator.storage.persist){
+      const already=await navigator.storage.persisted();
+      if(!already)await navigator.storage.persist();
+    }
+  }catch(e){}
 }
 
 // 旧アプリ形式のPREFS.program（name/bodyparts/exercises/has_bo/has_37/body）を新形式へ変換
@@ -1784,6 +1948,9 @@ function renderSettings(){
       <div class="set-note">最終バックアップ: ${esc(lastBk)}</div>
       <div class="set-note">localStorageはブラウザのデータ削除で消えます。定期的なエクスポートを強く推奨します。</div>
     </div>
+    <div class="panel"><div class="panel-title">STORAGE HEALTH</div>
+      <div class="set-note" id="storageHealth">確認中…</div>
+    </div>
     <div class="panel"><div class="panel-title">PROGRAM</div>
       <button class="set-btn" id="btnTargets"><span>週セット数目標を編集</span><small>部位別 min–max</small></button>
       <button class="set-btn" id="btnProgram"><span>種目・曜日メニューを編集</span><small>${prefs.program?'カスタム':'デフォルト'}</small></button>
@@ -1804,7 +1971,20 @@ function renderSettings(){
     <div class="panel"><div class="panel-title">INDICATORS</div>
       ${legends.map(([k,d])=>`<div class="legend-row">${indChip(k)}<span>${d}</span></div>`).join('')}
     </div>
-    <div style="text-align:center;color:var(--text-faint);font-family:var(--mono);font-size:10px;padding:8px 0 20px;">TRAINING.LOG v2 · localStorage</div>`;
+    <div style="text-align:center;color:var(--text-faint);font-family:var(--mono);font-size:10px;padding:8px 0 20px;">TRAINING.LOG v2 · localStorage + IndexedDB</div>`;
+  renderStorageHealth();
+}
+
+async function renderStorageHealth(){
+  const el=document.getElementById('storageHealth');
+  if(!el)return;
+  let lsN='—',idbN='—',persisted='—',stamp='—',standalone='—';
+  try{const a=JSON.parse(localStorage.getItem(LS_KEY));lsN=Array.isArray(a)?a.length+'件':'なし';}catch(e){lsN='読取不可';}
+  try{const b=await idbGet('records');idbN=Array.isArray(b)?b.length+'件':'なし';}catch(e){idbN='読取不可';}
+  try{const s=await idbGet('stamp');if(s&&s.at)stamp=new Date(s.at).toLocaleString('ja-JP');}catch(e){}
+  try{if(navigator.storage&&navigator.storage.persisted)persisted=(await navigator.storage.persisted())?'保護あり':'保護なし（OSに消される可能性）';}catch(e){}
+  try{standalone=(window.navigator.standalone===true||matchMedia('(display-mode: standalone)').matches)?'ホーム画面から起動':'ブラウザから起動';}catch(e){}
+  el.innerHTML=`localStorage: <b>${lsN}</b><br>ミラー(IndexedDB): <b>${idbN}</b><br>最終保存: ${esc(stamp)}<br>永続化: <b>${esc(persisted)}</b><br>起動方法: ${esc(standalone)}<br>直近の書き込み: <b>${lastPersistOk?'成功':'失敗'}</b>`;
 }
 function bindSettings(){
   $('#view-settings').addEventListener('click',e=>{
@@ -2043,9 +2223,11 @@ function init(){
     Chart.defaults.font.family="'JetBrains Mono',monospace";
     Chart.defaults.font.size=10;
   }
-  bindToday();bindHistory();bindStats();bindSettings();bindModal();bindSheet();
+  bindToday();bindHistory();bindStats();bindSettings();bindModal();bindSheet();bindRecover();
   $$('.tab-btn').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
   renderToday();
+  requestPersistentStorage();
+  reconcileStorage();
 }
 init();
 </script>
