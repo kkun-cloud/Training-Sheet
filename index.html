@@ -1841,19 +1841,40 @@ function bindStats(){
 /* ================= EXPORT / IMPORT ================= */
 function doExport(suffix){
   suffix=suffix||'';
-  const data={records:records,_exportedAt:new Date().toISOString(),_version:1};
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=`training-log-${todayStr()}${suffix}.json`;
-  document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  const json=JSON.stringify({records:records,_exportedAt:new Date().toISOString(),_version:1},null,2);
+  const fname=`training-log-${todayStr()}${suffix}.json`;
+  // ホーム画面PWA(standalone)ではiOSの仕様上、blobのダウンロードが
+  // 無音で失敗することがある。ダウンロード成否に関わらず本文自体を
+  // IndexedDBにも残し、SETTINGSからいつでも取り出せるようにする。
+  idbSet('lastExport',{json,fname,at:Date.now(),n:records.length});
+  let downloadOk=true;
+  try{
+    const blob=new Blob([json],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=fname;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  }catch(e){downloadOk=false;}
   prefs.lastBackupAt=new Date().toISOString();
   savePrefs();
-  if(!suffix)toast('エクスポート完了');
+  if(!suffix)toast(downloadOk?'エクスポート完了':'ダウンロードに失敗しました。SETTINGSから再取得してください');
   const bb=document.querySelector('.bk-banner');
   if(bb)bb.remove();
   if($('#view-settings').classList.contains('active'))renderSettings();
+}
+async function redownloadLastExport(){
+  const last=await idbGet('lastExport');
+  if(!last){toast('内部保存されたバックアップがありません');return;}
+  try{
+    const blob=new Blob([last.json],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=last.fname;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+    toast('再ダウンロードしました');
+  }catch(e){toast('ダウンロードに失敗しました');}
 }
 // 全記録を seed_data.js 互換形式の文字列に変換
 function buildSeedJS(){
@@ -1946,6 +1967,8 @@ function renderSettings(){
     <div class="panel"><div class="panel-title">BACKUP</div>
       <div class="tgl-row"><span>自動バックアップ<br><small style="color:var(--text-faint);">SAVE時にJSONを自動ダウンロード</small></span><button class="tgl ${prefs.autoBackup?'on':''}" id="tglAuto"></button></div>
       <div class="set-note">最終バックアップ: ${esc(lastBk)}</div>
+      <div class="set-note">ホーム画面から起動している場合、iOSの仕様でダウンロードが無音で失敗することがあります。その場合も内容は端末内に保存されているので、下のボタンでいつでも取り出せます。</div>
+      <button class="set-btn" id="btnRedownload"><span>最後のバックアップを再ダウンロード</span><small id="lastExportNote">確認中…</small></button>
       <div class="set-note">localStorageはブラウザのデータ削除で消えます。定期的なエクスポートを強く推奨します。</div>
     </div>
     <div class="panel"><div class="panel-title">STORAGE HEALTH</div>
@@ -1985,6 +2008,13 @@ async function renderStorageHealth(){
   try{if(navigator.storage&&navigator.storage.persisted)persisted=(await navigator.storage.persisted())?'保護あり':'保護なし（OSに消される可能性）';}catch(e){}
   try{standalone=(window.navigator.standalone===true||matchMedia('(display-mode: standalone)').matches)?'ホーム画面から起動':'ブラウザから起動';}catch(e){}
   el.innerHTML=`localStorage: <b>${lsN}</b><br>ミラー(IndexedDB): <b>${idbN}</b><br>最終保存: ${esc(stamp)}<br>永続化: <b>${esc(persisted)}</b><br>起動方法: ${esc(standalone)}<br>直近の書き込み: <b>${lastPersistOk?'成功':'失敗'}</b>`;
+  const noteEl=document.getElementById('lastExportNote');
+  if(noteEl){
+    try{
+      const last=await idbGet('lastExport');
+      noteEl.textContent=last?`${new Date(last.at).toLocaleString('ja-JP')} 時点 · ${last.n}件`:'まだありません';
+    }catch(e){noteEl.textContent='まだありません';}
+  }
 }
 function bindSettings(){
   $('#view-settings').addEventListener('click',e=>{
@@ -1993,6 +2023,7 @@ function bindSettings(){
     switch(b.id){
       case 'btn1rm':open1RMCalc();break;
       case 'btnExport':doExport();break;
+      case 'btnRedownload':redownloadLastExport();break;
       case 'btnSeedLog':exportSeedJS();break;
       case 'btnImport':openImport();break;
       case 'btnReseed':reseedData();break;
