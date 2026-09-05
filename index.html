@@ -219,8 +219,20 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .stat-tile .sv.gold{color:var(--gold);}
 .chart-box{background:var(--bg-card);border:1px solid var(--line);border-radius:18px;padding:12px 8px;margin-bottom:14px;height:230px;position:relative;}
 .chart-box canvas{width:100%!important;height:100%!important;}
-.log-entry{display:flex;align-items:flex-start;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);}
+.log-entry{display:flex;align-items:flex-start;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);width:100%;text-align:left;}
 .log-entry:last-child{border-bottom:none;}
+.le-edit{margin-left:auto;flex-shrink:0;color:var(--text-faint);font-size:14px;padding-top:2px;}
+.set-more{font-family:var(--mono);font-size:9px;color:var(--accent);border:1px solid var(--accent-dim);border-radius:6px;padding:1px 5px;}
+/* 保存済みセット行 / 入力待ちのセット行 */
+.set-row.saved{border-color:rgba(47,191,113,0.45);background:rgba(47,191,113,0.07);}
+.set-row.pending{border-style:dashed;}
+.sr-idx.next{color:var(--text-faint);border-style:dashed;}
+.rec-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;min-height:52px;padding:0 12px;margin-bottom:8px;
+  border:1px solid var(--line);border-radius:14px;background:var(--bg-elev);}
+.rr-idx{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--text-dim);min-width:30px;flex-shrink:0;}
+.rr-txt{flex:1;font-family:var(--mono);font-size:13px;min-width:0;}
+.rr-go{color:var(--text-faint);flex-shrink:0;}
+.danger-btn{border-color:rgba(239,85,97,0.5)!important;color:var(--red)!important;}
 .le-date{font-family:var(--mono);font-size:11px;color:var(--text-faint);width:74px;flex-shrink:0;padding-top:2px;}
 .le-main{flex:1;min-width:0;}
 .le-vals{font-family:var(--mono);font-size:12.5px;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
@@ -790,7 +802,12 @@ function mainVolOf(w,r1,r2,s){
   return w*r1*(s||1);
 }
 function f37VolOf(r){return (r.f37_w&&r.f37_r)?r.f37_w*r.f37_r:0;}
-function totalVolOf(r){return (r.vol||0)+(r.bo_v||0)+f37VolOf(r);}
+/* 追加セット（②③…）。既存レコードは extra を持たないので空配列扱い＝従来と同じ挙動 */
+function extraOf(r){return (r&&Array.isArray(r.extra))?r.extra:[];}
+function extraVolOf(r){
+  return extraOf(r).reduce((a,e)=>a+mainVolOf(num(e.w),num(e.r1),num(e.r2),num(e.s)),0);
+}
+function totalVolOf(r){return (r.vol||0)+(r.bo_v||0)+f37VolOf(r)+extraVolOf(r);}
 function est1RM(w,r1){
   w=Number(w)||0;r1=Number(r1)||0;
   if(w<=0||r1<=0)return null;
@@ -802,6 +819,7 @@ function e1rmOf(r){
   const c=[];
   const a=est1RM(r.weight,r.reps1);if(a)c.push(a);
   const b=est1RM(r.bo_w,r.bo_r);if(b)c.push(b);
+  extraOf(r).forEach(e=>{const v=est1RM(e.w,e.r1);if(v)c.push(v);});
   return c.length?Math.max(...c):null;
 }
 function repsOf(r){return (Number(r.reps1)||0)+(Number(r.reps2)||0);}
@@ -823,6 +841,11 @@ function recSetCount(r){
   }else if(r.exId==='hlr'&&r.reps1){
     n+=Number(r.sets)||1;
   }
+  extraOf(r).forEach(e=>{
+    if(e.r1==null||e.r1==='')return;
+    if(e.r2!=null&&e.r2!=='')n+=2;
+    else n+=Number(e.s)||1;
+  });
   if(r.bo_w&&r.bo_r)n+=Number(r.bo_s)||1;
   if(r.f37_w&&r.f37_r)n+=1;
   return n;
@@ -955,11 +978,46 @@ function setRowsHTML(item,c,best){
     return `<span class="sr-val"><b class="${emp?'empty':''}">${emp?'—':esc(String(v))}</b><i>${u}</i></span>`;
   };
   const has=v=>(v!==''&&v!=null);
+  const saved=todayRecOf(item.id);
+  let html='';
+  let idx=0;
+
+  // ---- 保存済みの行（タップで編集/削除）----
+  const savedRow=(label,vals,key,isBest)=>`<button class="set-row saved" data-act="editset" data-ex="${item.id}" data-key="${key}">
+      <span class="sr-idx ${/^\d+$/.test(label)?'':'sub'}">${label}</span>
+      ${isBest?'<span class="best-badge">ベスト</span>':''}
+      <span class="sr-vals">${vals}</span>
+      <span class="sr-check on">✓</span>
+    </button>`;
+  if(saved){
+    if(saved.reps1!=null||saved.weight!=null){
+      idx++;
+      const reps=saved.reps2!=null?`${fmtN(saved.reps1)}+${fmtN(saved.reps2)}`:fmtN(saved.reps1);
+      html+=savedRow(String(idx),
+        `${hlr?'':val(saved.weight,'KG')}${val(reps,'レップ')}${val(saved.sets,'セット')}${hlr?'':val(saved.rpe,'RPE')}`,
+        'main', best);
+    }
+    extraOf(saved).forEach((e,i)=>{
+      idx++;
+      const reps=(e.r2!=null&&e.r2!=='')?`${fmtN(num(e.r1))}+${fmtN(num(e.r2))}`:fmtN(num(e.r1));
+      html+=savedRow(String(idx),
+        `${hlr?'':val(e.w,'KG')}${val(reps,'レップ')}${val(e.s,'セット')}${hlr?'':val(e.rpe,'RPE')}`,
+        'extra:'+i, false);
+    });
+    if(saved.bo_w!=null){
+      html+=savedRow('BO',`${val(saved.bo_w,'KG')}${val(saved.bo_r,'レップ')}${val(saved.bo_s,'セット')}`,'bo',false);
+    }
+    if(saved.f37_w!=null){
+      const fd=fdNorm(saved.f37_done);
+      html+=savedRow('3/7',`${val(saved.f37_w,'KG')}${val(saved.f37_r,'レップ')}${val(fd===1?'✓':fd===0?'✗':'—','DONE')}`,'f37',false);
+    }
+  }
+
+  // ---- これから入力する行（保存すると上の保存済みへ移り、ここは空に戻る）----
   const repsMain=has(c.r1)?(has(c.r2)?`${c.r1}+${c.r2}`:c.r1):'';
   const mainFilled=hlr?has(c.r1):(has(c.w)||has(c.r1));
-  let html=`<button class="set-row ${mainFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="main">
-    <span class="sr-idx">1</span>
-    ${(best&&mainFilled)?'<span class="best-badge">ベスト</span>':''}
+  html+=`<button class="set-row pending ${mainFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="main">
+    <span class="sr-idx next">${idx+1}</span>
     <span class="sr-vals">
       ${hlr?'':val(c.w,'KG')}
       ${val(repsMain,'レップ')}
@@ -968,18 +1026,18 @@ function setRowsHTML(item,c,best){
     </span>
     <span class="sr-check ${mainFilled?'on':''}">✓</span>
   </button>`;
-  if(item.bo){
+  if(item.bo&&!(saved&&saved.bo_w!=null)){
     const boFilled=has(c.bw)&&has(c.br);
-    html+=`<button class="set-row ${boFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="bo">
+    html+=`<button class="set-row pending ${boFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="bo">
       <span class="sr-idx sub">BO</span>
       <span class="sr-vals">${val(c.bw,'KG')}${val(c.br,'レップ')}${val(c.bs,'セット')}</span>
       <span class="sr-check ${boFilled?'on':''}">✓</span>
     </button>`;
   }
-  if(item.f37){
+  if(item.f37&&!(saved&&saved.f37_w!=null)){
     const fFilled=has(c.fw)&&has(c.fr);
     const fdTxt=c.fd===1?'✓':c.fd===0?'✗':'—';
-    html+=`<button class="set-row ${fFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="f37">
+    html+=`<button class="set-row pending ${fFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="f37">
       <span class="sr-idx sub">3/7</span>
       <span class="sr-vals">${val(c.fw,'KG')}${val(c.fr,'レップ')}${val(fdTxt,'DONE')}</span>
       <span class="sr-check ${fFilled?'on':''}">✓</span>
@@ -1004,7 +1062,7 @@ function cardHTML(item){
     lastHTML=`<div class="last-info"><div class="lr-head">前回記録なし ${indChip('初回')}</div></div>`;
   }
   const condHTML=CONDS.map(v=>`<button class="cond-pill ${c.cond===v?'active':''}" data-act="cond" data-ex="${id}" data-val="${v}">${v}</button>`).join('');
-  const rec=buildRecordFromCard(id,item);
+  const rec=mergedRecordOf(id,item);
   const best=!!(rec&&isPR(rec.indicator));
   const timerHTML=`<div class="timer-row">
     <button class="timer-btn" data-act="timer" data-sec="120"><span>▶ 2:00 休憩</span></button>
@@ -1028,10 +1086,14 @@ function renderToday(){
   const prog=getProgram();
   const sess=prog[day]||{title:'オフ',sub:'',items:[]};
   // カード状態初期化（既存stateを保持しつつ不足分を作る）
+  // 入力欄は常に空から始める。保存済みの内容は「保存済み行」として別に表示し、
+  // 体調・メモだけはその日の記録として引き継ぐ。
   sess.items.forEach(it=>{
     if(!T.cards[it.id]){
       const tr=todayRecOf(it.id);
-      T.cards[it.id]=tr?recToCard(tr):emptyCard();
+      const c=emptyCard();
+      if(tr){c.cond=tr.condition||null;c.memo=tr.memo||'';c.condTouched=!!tr.condition;}
+      T.cards[it.id]=c;
     }
   });
   const actualDay=dowChar(T.date);
@@ -1059,7 +1121,7 @@ function renderToday(){
     ${cardsHTML}
     <div style="height:70px;"></div>`;
   sess.items.forEach(it=>updateCalc(it.id));
-  $$('#view-today textarea[data-f="memo"]').forEach(autoGrow);
+  growAllMemos();
   updateSaveFab();
 }
 
@@ -1069,19 +1131,26 @@ function autoGrow(el){
   el.style.height='auto';
   el.style.height=Math.max(42,el.scrollHeight)+'px';
 }
+// Webフォント読み込み前だと行数を誤って測るため、確定後にもう一度測り直す
+function growAllMemos(){
+  const run=()=>$$('#view-today textarea[data-f="memo"]').forEach(autoGrow);
+  run();
+  requestAnimationFrame(run);
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(run).catch(()=>{});
+}
 
 function updateCalc(exId){
   const el=$(`#calc-${exId}`);
   if(!el)return;
   const item=exById(exId)||{id:exId};
   const c=T.cards[exId];
-  const rec=buildRecordFromCard(exId,item);
+  const rec=mergedRecordOf(exId,item);
   if(!rec){el.innerHTML=`<span style="color:var(--text-faint);">未入力</span>`;return;}
   if(isHLR(item)){
     el.innerHTML=`<span>REPS合計 <b class="c1rm">${fmtN((rec.reps1||0)*(rec.sets||1))}</b></span>${indChip(rec.indicator)}`;
     return;
   }
-  let parts=`VOL ${fmtN(rec.vol)}`;
+  let parts=`VOL ${fmtN((rec.vol||0)+extraVolOf(rec))}`;
   if(rec.bo_v)parts+=` / BO ${fmtN(rec.bo_v)}`;
   const f37v=f37VolOf(rec);
   if(f37v)parts+=` / 3·7 ${fmtN(f37v)}`;
@@ -1089,34 +1158,68 @@ function updateCalc(exId){
   el.innerHTML=`<span>${parts}</span><span>1RM <b class="c1rm">${rm?fmtN(rm):'—'}</b> ${indChip(rec.indicator)}</span>`;
 }
 
-function buildRecordFromCard(exId,item){
-  const c=T.cards[exId];
-  if(!c)return null;
-  const hlr=isHLR(item);
-  const w=num(c.w),r1=num(c.r1),r2=num(c.r2);
-  if(hlr){
-    if(r1==null)return null;
-  }else if(w==null&&r1==null)return null;
-  let s=num(c.s);
-  if(s==null)s=1;
-  const rec={date:T.date,day:dowChar(T.date),exId,
-    weight:hlr?null:w,reps1:r1,reps2:hlr?null:r2,sets:s,
-    vol:hlr?null:mainVolOf(w,r1,r2,s),
+function blankRecord(exId){
+  return {date:T.date,day:dowChar(T.date),exId,
+    weight:null,reps1:null,reps2:null,sets:null,vol:null,
     bo_w:null,bo_r:null,bo_s:null,bo_v:null,
     f37_w:null,f37_r:null,f37_done:null,
-    rpe:c.rpe,indicator:null,condition:c.cond,memo:c.memo||null,protocol:null};
+    rpe:null,indicator:null,condition:null,memo:null,protocol:null,extra:[]};
+}
+function recIsEmpty(rec){
+  return rec.weight==null&&rec.reps1==null&&!extraOf(rec).length&&rec.bo_w==null&&rec.f37_w==null;
+}
+function finalizeRecord(rec,exId){
+  rec.protocol=inferProtocol(rec);
+  rec.indicator=judgeIndicator(rec,records.filter(r=>r.exId===exId&&r.date<T.date));
+  return rec;
+}
+// 保存済みレコード＋未保存の入力＝その日の最終形。
+// 入力が空でも保存済みがあればそれを返すので、保存後もVOL等が正しく出る。
+function mergedRecordOf(exId,item){
+  item=item||exById(exId)||{id:exId};
+  const c=T.cards[exId]||emptyCard();
+  const saved=todayRecOf(exId);
+  const hlr=isHLR(item);
+  const rec=saved?JSON.parse(JSON.stringify(saved)):blankRecord(exId);
+  if(!Array.isArray(rec.extra))rec.extra=[];
+
+  const w=num(c.w),r1=num(c.r1),r2=num(c.r2);
+  let s=num(c.s); if(s==null)s=1;
+  const hasPendingMain=hlr?(r1!=null):(w!=null||r1!=null);
+  if(hasPendingMain){
+    if(rec.weight==null&&rec.reps1==null){
+      rec.weight=hlr?null:w; rec.reps1=r1; rec.reps2=hlr?null:r2; rec.sets=s;
+      rec.vol=hlr?null:mainVolOf(w,r1,r2,s);
+      if(c.rpe!=null)rec.rpe=c.rpe;
+    }else{
+      rec.extra.push({w:hlr?null:w,r1:r1,r2:hlr?null:r2,s:s,rpe:c.rpe!=null?c.rpe:null});
+    }
+  }
   const bw=num(c.bw),br=num(c.br);
-  if(bw!=null&&br!=null){
+  if(rec.bo_w==null&&bw!=null&&br!=null){
     rec.bo_w=bw;rec.bo_r=br;rec.bo_s=num(c.bs)!=null?num(c.bs):1;
     rec.bo_v=bw*br*rec.bo_s;
   }
   const fw=num(c.fw),fr=num(c.fr);
-  if(fw!=null)rec.f37_w=fw;
-  if(fr!=null)rec.f37_r=fr;
-  if(c.fd!=null)rec.f37_done=c.fd;
-  rec.protocol=inferProtocol(rec);
-  rec.indicator=judgeIndicator(rec,records.filter(r=>r.exId===exId&&r.date<T.date));
-  return rec;
+  if(rec.f37_w==null){
+    if(fw!=null)rec.f37_w=fw;
+    if(fr!=null)rec.f37_r=fr;
+    if(c.fd!=null)rec.f37_done=c.fd;
+  }
+  if(c.cond)rec.condition=c.cond;
+  if(c.memo!=null&&c.memo!=='')rec.memo=c.memo;
+  else if(saved)rec.memo=saved.memo||null;
+
+  if(recIsEmpty(rec))return null;
+  return finalizeRecord(rec,exId);
+}
+// 未保存の入力だけがあるか（SAVE LOGボタンの表示判定用）
+function hasPendingInput(exId,item){
+  const c=T.cards[exId];
+  if(!c)return false;
+  const hlr=isHLR(item||exById(exId)||{id:exId});
+  if(hlr)return num(c.r1)!=null;
+  return num(c.w)!=null||num(c.r1)!=null||(num(c.bw)!=null&&num(c.br)!=null)||num(c.fw)!=null;
 }
 
 function markDirty(){
@@ -1162,7 +1265,7 @@ function refreshCard(exId){
   const tmp=document.createElement('div');
   tmp.innerHTML=cardHTML(item);
   card.replaceWith(tmp.firstElementChild);
-  autoGrow(document.querySelector(`.ex-card[data-card="${exId}"] textarea[data-f="memo"]`));
+  growAllMemos();
   updateCalc(exId);
 }
 
@@ -1172,15 +1275,18 @@ function collectRecords(){
   const sess=getProgram()[day]||{items:[]};
   const out=[];
   sess.items.forEach(it=>{
-    const rec=buildRecordFromCard(it.id,it);
+    const rec=mergedRecordOf(it.id,it);
     if(rec)out.push(rec);
   });
   return out;
 }
 
 function saveLog(){
+  const day=displayDay();
+  const sess=getProgram()[day]||{items:[]};
+  const pendingItems=sess.items.filter(it=>hasPendingInput(it.id,it));
+  if(!pendingItems.length){toast('保存する入力がありません');return;}
   const recs=collectRecords();
-  if(!recs.length){toast('保存できる入力がありません');return;}
   const ids=new Set(recs.map(r=>r.exId));
   records=records.filter(r=>!(r.date===T.date&&ids.has(r.exId)));
   records.push(...recs);
@@ -1189,13 +1295,21 @@ function saveLog(){
   if(prefs.autoBackup){try{doExport('-auto');}catch(e){}}
   T.dirty=false;
   clearDraft();
-  // 保存済みの体調はcondTouched扱いに
-  recs.forEach(r=>{if(T.cards[r.exId]&&r.condition)T.cards[r.exId].condTouched=true;});
+  // 入力欄は空に戻す（保存内容は「保存済み行」として表示される）。
+  // 体調・メモはその日の記録なので保持する。
+  sess.items.forEach(it=>{
+    const c=T.cards[it.id];
+    if(!c)return;
+    c.w='';c.r1='';c.r2='';c.s='';c.rpe=null;
+    c.bw='';c.br='';c.bs='';
+    c.fw='';c.fr='';c.fd=null;
+    if(c.cond)c.condTouched=true;
+  });
   const sy=window.scrollY;
   renderToday();
   requestAnimationFrame(()=>window.scrollTo(0,sy));
   const prCount=recs.filter(r=>isPR(r.indicator)).length;
-  toast(`${recs.length}件保存しました${prCount>0?` · PR×${prCount}`:''}`);
+  toast(`${pendingItems.length}種目を保存しました${prCount>0?` · PR×${prCount}`:''}`);
 }
 
 function changeDate(newDate){
@@ -1311,6 +1425,161 @@ function clearSheetRow(){
   openSetSheet(exId,row);
 }
 
+/* ---- 保存済みセットの編集・削除 ---- */
+let editCtx=null, recSheetCtx=null;
+const EDIT_STEP={w:2.5,r1:1,r2:1,s:1,rpe:1};
+function editFieldsFor(key,item){
+  if(key==='bo')return [{k:'w',label:'BO KG'},{k:'r1',label:'BO レップ'},{k:'s',label:'BO セット'}];
+  if(key==='f37')return [{k:'w',label:'3/7 KG'},{k:'r1',label:'3/7 レップ'}];
+  return isHLR(item)?[{k:'r1',label:'レップ'},{k:'s',label:'セット'}]
+    :[{k:'w',label:'KG'},{k:'r1',label:'レップ¹'},{k:'r2',label:'レップ²'},{k:'s',label:'セット'},{k:'rpe',label:'RPE'}];
+}
+function editValsFor(rec,key){
+  if(key==='main')return {w:rec.weight,r1:rec.reps1,r2:rec.reps2,s:rec.sets,rpe:rec.rpe};
+  if(key==='bo')return {w:rec.bo_w,r1:rec.bo_r,s:rec.bo_s};
+  if(key==='f37')return {w:rec.f37_w,r1:rec.f37_r};
+  const e=extraOf(rec)[+key.split(':')[1]]||{};
+  return {w:num(e.w),r1:num(e.r1),r2:num(e.r2),s:num(e.s),rpe:num(e.rpe)};
+}
+function editTitleFor(key){
+  if(key==='bo')return 'バックオフセット';
+  if(key==='f37')return '3/7法';
+  if(key==='main')return 'セット 1';
+  return 'セット '+(+key.split(':')[1]+2);
+}
+function openSavedSetSheet(exId,key,date){
+  date=date||T.date;
+  const rec=records.find(r=>r.exId===exId&&r.date===date);
+  if(!rec){toast('記録が見つかりません');return;}
+  const item=exById(exId)||{id:exId,name:exName(exId)};
+  editCtx={exId,key,date,vals:editValsFor(rec,key)};
+  const fields=editFieldsFor(key,item);
+  const rows=fields.map(f=>{
+    const v=editCtx.vals[f.k];
+    return `<div class="st-row">
+      <button class="st-btn" data-eact="dec" data-ek="${f.k}"><span>−</span></button>
+      <div class="st-mid"><input type="number" step="any" inputmode="decimal" data-ek="${f.k}" value="${v==null?'':esc(String(v))}" placeholder="—"><label>${f.label}</label></div>
+      <button class="st-btn" data-eact="inc" data-ek="${f.k}"><span>＋</span></button>
+    </div>`;
+  }).join('');
+  openSheet(`<h3>${esc(item.name||exName(exId))}</h3>
+    <div class="sheet-sub">${esc(date)} · ${editTitleFor(key)}（保存済み）</div>
+    ${rows}
+    <div class="sheet-foot">
+      <button class="danger-btn" data-eact="del"><span>この行を削除</span></button>
+      <button data-eact="cancel"><span>キャンセル</span></button>
+    </div>
+    <button class="sheet-primary" data-eact="ok"><span>変更を保存</span></button>`,
+    ()=>{editCtx=null;});
+}
+function editStep(k,dir){
+  if(!editCtx)return;
+  const step=EDIT_STEP[k]||1;
+  const base=editCtx.vals[k]!=null?Number(editCtx.vals[k]):0;
+  let v=Math.max(0,Math.round((base+dir*step)*100)/100);
+  if(k==='rpe')v=Math.min(10,Math.max(6,v));
+  editCtx.vals[k]=v;
+  const inp=document.querySelector(`#sheetRoot input[data-ek="${k}"]`);
+  if(inp)inp.value=String(v);
+  vibrate(20);
+}
+function commitSavedSet(){
+  if(!editCtx)return;
+  const {exId,key,date,vals}=editCtx;
+  const rec=records.find(r=>r.exId===exId&&r.date===date);
+  if(!rec)return;
+  const hlr=isHLR(exById(exId)||{id:exId});
+  const w=num(vals.w),r1=num(vals.r1),r2=num(vals.r2);
+  let s=num(vals.s); if(s==null)s=1;
+  if(key==='main'){
+    rec.weight=hlr?null:w;rec.reps1=r1;rec.reps2=hlr?null:r2;rec.sets=s;
+    rec.vol=hlr?null:mainVolOf(w,r1,r2,s);rec.rpe=num(vals.rpe);
+  }else if(key==='bo'){
+    rec.bo_w=w;rec.bo_r=r1;rec.bo_s=s;
+    rec.bo_v=(w!=null&&r1!=null)?w*r1*s:null;
+  }else if(key==='f37'){
+    rec.f37_w=w;rec.f37_r=r1;
+  }else{
+    if(!Array.isArray(rec.extra))rec.extra=[];
+    rec.extra[+key.split(':')[1]]={w:hlr?null:w,r1:r1,r2:hlr?null:r2,s:s,rpe:num(vals.rpe)};
+  }
+  finalizeRecord(rec,exId);
+  afterRecordsChanged();
+  closeSheet();
+  toast('更新しました');
+}
+function deleteSavedSet(){
+  if(!editCtx)return;
+  const {exId,key,date}=editCtx;
+  const i=records.findIndex(r=>r.exId===exId&&r.date===date);
+  if(i<0)return;
+  const rec=records[i];
+  if(key==='main'){
+    const ex=extraOf(rec).slice();
+    if(ex.length){
+      const f=ex.shift();
+      rec.weight=num(f.w);rec.reps1=num(f.r1);rec.reps2=num(f.r2);rec.sets=num(f.s)||1;
+      rec.vol=mainVolOf(num(f.w),num(f.r1),num(f.r2),num(f.s)||1);rec.rpe=num(f.rpe);
+      rec.extra=ex;
+    }else{
+      rec.weight=null;rec.reps1=null;rec.reps2=null;rec.sets=null;rec.vol=null;rec.rpe=null;
+    }
+  }else if(key==='bo'){rec.bo_w=null;rec.bo_r=null;rec.bo_s=null;rec.bo_v=null;}
+  else if(key==='f37'){rec.f37_w=null;rec.f37_r=null;rec.f37_done=null;}
+  else{if(Array.isArray(rec.extra))rec.extra.splice(+key.split(':')[1],1);}
+  if(recIsEmpty(rec))records.splice(i,1);
+  else finalizeRecord(rec,exId);
+  afterRecordsChanged();
+  closeSheet();
+  toast('削除しました');
+}
+function afterRecordsChanged(){
+  records.sort(byDate);
+  persistRecords();
+  const sy=window.scrollY;
+  renderToday();
+  if($('#view-history').classList.contains('active'))renderHistory();
+  if($('#view-stats').classList.contains('active'))renderStats();
+  requestAnimationFrame(()=>window.scrollTo(0,sy));
+}
+/* ---- HISTORYから1件の記録を開く（行ごとの編集・記録全体の削除）---- */
+function openRecordSheet(exId,date){
+  const rec=records.find(r=>r.exId===exId&&r.date===date);
+  if(!rec){toast('記録が見つかりません');return;}
+  const item=exById(exId)||{id:exId,name:exName(exId)};
+  const hlr=isHLR(item);
+  const kg=v=>hlr?'':(v!=null?fmtN(v)+'kg · ':'');
+  const rows=[];
+  if(rec.reps1!=null||rec.weight!=null){
+    rows.push(['main','1',`${kg(rec.weight)}${fmtN(rec.reps1)}${rec.reps2!=null?'+'+fmtN(rec.reps2):''} × ${fmtN(rec.sets||1)}${rec.rpe!=null?' @'+rec.rpe:''}`]);
+  }
+  extraOf(rec).forEach((e,i)=>{
+    rows.push(['extra:'+i,String(i+2),`${kg(num(e.w))}${fmtN(num(e.r1))}${(e.r2!=null&&e.r2!=='')?'+'+fmtN(num(e.r2)):''} × ${fmtN(num(e.s)||1)}${e.rpe!=null?' @'+e.rpe:''}`]);
+  });
+  if(rec.bo_w!=null)rows.push(['bo','BO',`${fmtN(rec.bo_w)}kg × ${fmtN(rec.bo_r)} × ${fmtN(rec.bo_s||1)}`]);
+  if(rec.f37_w!=null)rows.push(['f37','3/7',`${fmtN(rec.f37_w)}kg × ${fmtN(rec.f37_r)}`]);
+  recSheetCtx={exId,date};
+  openSheet(`<h3>${esc(item.name||exName(exId))}</h3>
+    <div class="sheet-sub">${esc(date)} ${dowChar(date)} · タップで編集</div>
+    ${rows.map(([k,lab,txt])=>`<button class="rec-row" data-ract="edit" data-key="${k}">
+      <span class="rr-idx">${lab}</span><span class="rr-txt">${esc(txt)}</span><span class="rr-go">✎</span></button>`).join('')}
+    <div class="sheet-foot">
+      <button class="danger-btn" data-ract="delall"><span>この記録を削除</span></button>
+      <button data-ract="close"><span>閉じる</span></button>
+    </div>`,()=>{recSheetCtx=null;});
+}
+function deleteWholeRecord(){
+  if(!recSheetCtx)return;
+  const {exId,date}=recSheetCtx;
+  if(!confirm(`${date} の「${exName(exId)}」の記録を削除します。\nこの操作は取り消せません。`))return;
+  const i=records.findIndex(r=>r.exId===exId&&r.date===date);
+  if(i<0)return;
+  records.splice(i,1);
+  afterRecordsChanged();
+  closeSheet();
+  toast('削除しました');
+}
+
 /* ---- 1RM計算機 ---- */
 const RM={w:100,r:8,step:2.5};
 function roundToStep(v){return Math.round(v/RM.step)*RM.step;}
@@ -1358,6 +1627,24 @@ function bindSheet(){
       timerTick();
       return;
     }
+    const eact=b.dataset.eact;
+    if(eact){
+      if(eact==='dec'||eact==='inc')editStep(b.dataset.ek,eact==='inc'?1:-1);
+      else if(eact==='ok')commitSavedSet();
+      else if(eact==='del')deleteSavedSet();
+      else if(eact==='cancel')closeSheet();
+      return;
+    }
+    const ract=b.dataset.ract;
+    if(ract){
+      if(ract==='edit'){
+        const ctx=recSheetCtx;
+        openSavedSetSheet(ctx.exId,b.dataset.key,ctx.date);
+      }
+      else if(ract==='delall')deleteWholeRecord();
+      else if(ract==='close')closeSheet();
+      return;
+    }
     if(b.dataset.rmstep){RM.step=parseFloat(b.dataset.rmstep);open1RMCalc();return;}
     const rmact=b.dataset.rmact;
     if(rmact){
@@ -1403,6 +1690,7 @@ function bindSheet(){
       updateRM();
       return;
     }
+    if(t.dataset.ek&&editCtx){editCtx.vals[t.dataset.ek]=num(t.value);return;}
     const sk=t.dataset.sk;
     if(!sk||!sheetCtx)return;
     const c=T.cards[sheetCtx.exId];
@@ -1558,6 +1846,8 @@ function bindToday(){
       window.scrollTo(0,sy);
     }else if(act==='row'){
       openSetSheet(ex,b.dataset.row);
+    }else if(act==='editset'){
+      openSavedSetSheet(ex,b.dataset.key);
     }else if(act==='cond'){
       const c=T.cards[ex];
       c.cond=(c.cond===b.dataset.val)?null:b.dataset.val;
@@ -1633,13 +1923,16 @@ function renderHistory(){
     <div class="stat-tile"><div class="sv gold">${max1rm?fmtN(max1rm):'—'}<small>kg</small></div><div class="sl">EST 1RM</div></div>
     <div class="stat-tile"><div class="sv">${prCount}<small>回</small></div><div class="sl">PRs · ${pool.length}回中</div></div>
   </div>`;
-  const entries=pool.slice().reverse().map(r=>`<div class="log-entry">
+  const entries=pool.slice().reverse().map(r=>{
+    const n=extraOf(r).length;
+    return `<button class="log-entry" data-hact="entry" data-date="${r.date}" data-ex="${esc(r.exId)}">
     <span class="le-date">${r.date.slice(2).replace(/-/g,'/')}</span>
     <div class="le-main">
-      <div class="le-vals"><span class="proto-tag">${esc(r.protocol)}</span><span>${esc(lastSummary(r,{id:r.exId}))}</span>${indChip(r.indicator)}</div>
-      <div class="le-memo">VOL ${r.vol!=null?fmtN(r.vol):'—'}${(r.memo||r.condition)?` · ${r.condition?esc(r.condition)+(r.memo?' · ':''):''}${esc(r.memo||'')}`:''}</div>
+      <div class="le-vals"><span class="proto-tag">${esc(r.protocol)}</span><span>${esc(lastSummary(r,{id:r.exId}))}</span>${n?`<span class="set-more">+${n}セット</span>`:''}${indChip(r.indicator)}</div>
+      <div class="le-memo">VOL ${fmtN(totalVolOf(r))}${(r.memo||r.condition)?` · ${r.condition?esc(r.condition)+(r.memo?' · ':''):''}${esc(r.memo||'')}`:''}</div>
     </div>
-  </div>`).join('');
+    <span class="le-edit">✎</span>
+  </button>`;}).join('');
   $('#view-history').innerHTML=`
     <select class="hsel" id="histEx">${opts}</select>
     ${pillsHTML}
@@ -1673,6 +1966,7 @@ function bindHistory(){
   v.addEventListener('click',e=>{
     const b=e.target.closest('button');
     if(!b)return;
+    if(b.dataset.hact==='entry'){openRecordSheet(b.dataset.ex,b.dataset.date);return;}
     if(b.dataset.proto){H.protocol=b.dataset.proto;renderHistory();}
     else if(b.dataset.metric){H.metric=b.dataset.metric;renderHistory();}
   });
