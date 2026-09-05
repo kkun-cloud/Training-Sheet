@@ -390,6 +390,9 @@ textarea.imp-ta{width:100%;min-height:120px;padding:10px;font-size:12px;resize:v
 'use strict';
 /* ================= CONSTANTS ================= */
 const LS_KEY='training_log_v1', LS_PREFS='training_log_prefs_v1', LS_DRAFT='training_log_draft_v1';
+// 更新のたびに変える。ホーム画面PWAは古いHTMLを掴んだままになりやすいので、
+// 起動時にサーバ側のこの値と比較して差があれば更新バナーを出す。
+const APP_VERSION='2026-09-05c';
 const DAYS=['日','月','火','水','木','金','土'];
 const DAY_ORDER=['月','火','水','木','金','土','日'];
 const GROUPS=['胸','背中','肩','脚','腕'];
@@ -692,6 +695,11 @@ function bindRecover(){
     const b=e.target.closest('button');
     if(!b)return;
     if(b.id==='rcDismiss'){$('#recoverRoot').innerHTML='';return;}
+    if(b.id==='rcUpdate'){
+      // クエリを付けてキャッシュを確実に外して読み直す
+      location.replace(location.pathname+'?v='+encodeURIComponent(window.__newVer||Date.now()));
+      return;
+    }
     if(b.id==='rcRestore'&&window.__rcPending){
       records=window.__rcPending;
       normalizeRecords(records);
@@ -702,6 +710,21 @@ function bindRecover(){
       toast(`${records.length}件を復元しました`);
     }
   });
+}
+
+// サーバ上のindex.htmlのAPP_VERSIONと比較し、違えば更新バナーを出す
+async function checkForUpdate(){
+  try{
+    const base=location.pathname.replace(/[^/]*$/,'')+'index.html';
+    const res=await fetch(base+'?_='+Date.now(),{cache:'reload'});
+    if(!res.ok)return;
+    const txt=await res.text();
+    const m=txt.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    if(m&&m[1]!==APP_VERSION){
+      window.__newVer=m[1];
+      showRecoverBanner(`<span>新しいバージョン <b>${esc(m[1])}</b> があります（現在 ${esc(APP_VERSION)}）。</span><button id="rcUpdate"><b>更新</b></button>`);
+    }
+  }catch(e){}
 }
 
 // ストレージを「消去対象外」にするようOSに要求する
@@ -2302,7 +2325,9 @@ function renderSettings(){
     <div class="panel"><div class="panel-title">INDICATORS</div>
       ${legends.map(([k,d])=>`<div class="legend-row">${indChip(k)}<span>${d}</span></div>`).join('')}
     </div>
-    <div style="text-align:center;color:var(--text-faint);font-family:var(--mono);font-size:10px;padding:8px 0 20px;">TRAINING.LOG v2 · localStorage + IndexedDB</div>`;
+    <div style="text-align:center;color:var(--text-faint);font-family:var(--mono);font-size:10px;padding:8px 0 20px;">
+      TRAINING.LOG · BUILD <b style="color:var(--text-dim);">${esc(APP_VERSION)}</b><br>localStorage + IndexedDB
+    </div>`;
   renderStorageHealth();
 }
 
@@ -2567,6 +2592,7 @@ function init(){
   renderToday();
   requestPersistentStorage();
   reconcileStorage();
+  checkForUpdate();
 }
 init();
 </script>
