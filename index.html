@@ -121,9 +121,13 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .cond-lab{font-family:var(--mono);font-size:9px;letter-spacing:1.5px;color:var(--text-faint);}
 .cond-pill{border:1px solid var(--line);border-radius:99px;padding:0 13px;min-height:40px;font-size:12px;color:var(--text-dim);background:var(--bg-elev);}
 .cond-pill.active{border-color:var(--accent);color:#fff;background:var(--accent-dim);}
-.memo-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
-.memo-row label{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--text-faint);}
-.memo-row input{flex:1;min-height:42px;padding:0 12px;font-family:var(--sans);font-size:16px;text-align:left;}
+.memo-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;}
+.memo-row label{font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--text-faint);padding-top:15px;flex:0 0 auto;}
+/* flexアイテムのmin-width:autoを解除しないと、Safariがinput/textareaの
+   既定幅(size属性由来)より縮めずカードからはみ出す */
+.memo-row textarea{flex:1 1 auto;min-width:0;width:100%;min-height:42px;padding:11px 12px;
+  font-family:var(--sans);font-size:16px;line-height:1.5;text-align:left;
+  resize:none;overflow:hidden;display:block;}
 .calc-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);background:var(--bg-elev);border-radius:12px;padding:8px 12px;margin-bottom:10px;min-height:36px;flex-wrap:wrap;}
 .calc-row .c1rm{color:var(--text);}
 .timer-row{display:flex;gap:6px;flex-wrap:wrap;}
@@ -1013,7 +1017,7 @@ function cardHTML(item){
     <div class="last-row">${lastHTML}</div>
     ${setRowsHTML(item,c,best)}
     <div class="cond-row"><span class="cond-lab">体調</span>${condHTML}</div>
-    <div class="memo-row"><label>MEMO</label><input type="text" data-ex="${id}" data-f="memo" value="${esc(c.memo)}" placeholder=""></div>
+    <div class="memo-row"><label>MEMO</label><textarea data-ex="${id}" data-f="memo" rows="1" placeholder="">${esc(c.memo)}</textarea></div>
     <div class="calc-row" id="calc-${id}"></div>
     ${timerHTML}
   </div>`;
@@ -1055,7 +1059,15 @@ function renderToday(){
     ${cardsHTML}
     <div style="height:70px;"></div>`;
   sess.items.forEach(it=>updateCalc(it.id));
+  $$('#view-today textarea[data-f="memo"]').forEach(autoGrow);
   updateSaveFab();
+}
+
+// MEMO欄を内容の行数に合わせて縦に伸ばす（横にはみ出させない）
+function autoGrow(el){
+  if(!el)return;
+  el.style.height='auto';
+  el.style.height=Math.max(42,el.scrollHeight)+'px';
 }
 
 function updateCalc(exId){
@@ -1150,6 +1162,7 @@ function refreshCard(exId){
   const tmp=document.createElement('div');
   tmp.innerHTML=cardHTML(item);
   card.replaceWith(tmp.firstElementChild);
+  autoGrow(document.querySelector(`.ex-card[data-card="${exId}"] textarea[data-f="memo"]`));
   updateCalc(exId);
 }
 
@@ -1519,6 +1532,7 @@ function bindToday(){
     if(!ex||!f)return;
     if(!T.cards[ex])T.cards[ex]=emptyCard();
     T.cards[ex][f]=t.value;
+    if(t.tagName==='TEXTAREA')autoGrow(t);
     updateCalc(ex);
     markDirty();
   });
