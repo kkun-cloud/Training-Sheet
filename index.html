@@ -71,8 +71,10 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .wg-fill.low{background:var(--red);}
 .wg-fill.ok{background:var(--green);}
 .wg-fill.over{background:var(--yellow);}
-.wg-num{width:72px;text-align:right;font-family:var(--mono);font-size:10px;color:var(--text-faint);}
+.wg-num{width:96px;text-align:right;font-family:var(--mono);font-size:10px;color:var(--text-faint);}
 .wg-num b{color:var(--text);font-weight:700;}
+.wg-split{display:block;font-style:normal;font-size:9px;color:var(--text-faint);opacity:0.85;}
+.wg-ind-tag{font-style:normal;font-size:9px;margin-left:5px;padding:0 4px;border:1px solid var(--line);border-radius:5px;color:var(--text-faint);}
 .wg-bd{padding:2px 0 8px 48px;}
 .wg-bd-row{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--text-dim);font-family:var(--mono);padding:2px 0;}
 
@@ -90,6 +92,11 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .exc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;}
 .exc-name{font-weight:800;font-size:17px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.35;}
 .exc-role{font-size:11px;color:var(--text-faint);text-align:right;flex-shrink:0;line-height:1.5;}
+.exc-right{display:flex;align-items:flex-start;gap:6px;flex-shrink:0;}
+.exc-ord{display:flex;flex-direction:column;gap:3px;flex-shrink:0;}
+.ord-btn{width:30px;height:26px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev);
+  color:var(--text-dim);font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;}
+.ord-btn:active{background:var(--accent-dim);color:var(--text);}
 .tagchip{font-family:var(--mono);font-size:9px;letter-spacing:1px;padding:2px 8px;border-radius:99px;border:1px solid var(--gold);color:var(--gold);font-weight:700;}
 .tagchip.t37{border-color:var(--accent);color:var(--accent);}
 .mus-dots{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
@@ -392,7 +399,7 @@ textarea.imp-ta{width:100%;min-height:120px;padding:10px;font-size:12px;resize:v
 const LS_KEY='training_log_v1', LS_PREFS='training_log_prefs_v1', LS_DRAFT='training_log_draft_v1';
 // 更新のたびに変える。ホーム画面PWAは古いHTMLを掴んだままになりやすいので、
 // 起動時にサーバ側のこの値と比較して差があれば更新バナーを出す。
-const APP_VERSION='2026-09-05c';
+const APP_VERSION='2026-10-10a';
 const DAYS=['日','月','火','水','木','金','土'];
 const DAY_ORDER=['月','火','水','木','金','土','日'];
 const GROUPS=['胸','背中','肩','脚','腕'];
@@ -410,6 +417,39 @@ const EX_GROUP_FALLBACK={
   'ez_lying':'腕','ez_ext':'腕',
   'hlr':null
 };
+
+/* 間接刺激（副次的に入る部位）。直接刺激1.0に対して0.5セット換算で加算する。
+   プレス系は三頭と肩前部、プル系は二頭、ロウ系は加えて肩リアに入る。
+   フライやサイドレイズのような単関節種目は間接刺激なしとして扱う。 */
+const EX_INDIRECT={
+  // 胸のプレス系 → 三頭・肩前部
+  'bench':{'腕':0.5,'肩':0.5},
+  'incline':{'腕':0.5,'肩':0.5},
+  'dips':{'腕':0.5,'肩':0.5},
+  // 胸のフライ系 → 肩前部のみ（三頭はほぼ関与しない）
+  'cable_cross':{'肩':0.5},
+  'pec_fly':{'肩':0.5},
+  // 背中の縦引き → 二頭
+  'pullup':{'腕':0.5},
+  'front_pulldown':{'腕':0.5},
+  'one_pulldown':{'腕':0.5},
+  'lat_t':{'腕':0.5},
+  // 背中の横引き → 二頭＋肩リア
+  'tbar_row':{'腕':0.5,'肩':0.5},
+  'seated_row':{'腕':0.5,'肩':0.5},
+  // 肩のプレス → 三頭
+  'shoulder_p':{'腕':0.5},
+  // ナローベンチは三頭が主働だが胸・肩前部にも入る
+  'narrow':{'胸':0.5,'肩':0.5},
+  // RDLは脊柱起立筋・広背筋にも入る
+  'rdl':{'背中':0.5}
+};
+function exIndirect(id){return EX_INDIRECT[id]||null;}
+// 週セット数は0.5刻みになるので、整数ならそのまま・端数があれば小数1桁で出す
+function fmtSets(n){
+  if(n==null)return '0';
+  return Number.isInteger(n)?String(n):String(Math.round(n*10)/10);
+}
 const EX_NAME_FALLBACK={
   bench:'ベンチプレス',incline:'インクラインベンチ',cable_cross:'ケーブルクロス',pec_fly:'ペックフライ',dips:'ディップス（加重）',
   pullup:'懸垂（加重）',tbar_row:'Tバーロー',one_pulldown:'ワンハンドプルダウン',lat_t:'ラットプルTバー',seated_row:'シーテッドロー',front_pulldown:'フロントプルダウン',
@@ -763,6 +803,25 @@ function migratePrefsProgram(){
 
 /* ================= PROGRAM ================= */
 function getProgram(){return prefs.program||DEFAULT_PROGRAM;}
+// 並べ替えはユーザー独自のプログラムとして保存する。未編集ならDEFAULTを複製してから触る
+function ensureCustomProgram(){
+  if(!prefs.program)prefs.program=JSON.parse(JSON.stringify(DEFAULT_PROGRAM));
+  return prefs.program;
+}
+function moveExercise(exId,dir){
+  const day=displayDay();
+  const sess=ensureCustomProgram()[day];
+  if(!sess||!Array.isArray(sess.items))return;
+  const i=sess.items.findIndex(it=>it.id===exId);
+  const j=i+dir;
+  if(i<0||j<0||j>=sess.items.length)return;
+  const tmp=sess.items[i];sess.items[i]=sess.items[j];sess.items[j]=tmp;
+  savePrefs();
+  vibrate(20);
+  const sy=window.scrollY;
+  renderToday();
+  requestAnimationFrame(()=>window.scrollTo(0,sy));
+}
 function getTargets(){return prefs.weeklyTargets||DEFAULT_WEEKLY_TARGETS;}
 function programExList(){
   const seen=new Set(),out=[];
@@ -804,7 +863,11 @@ function inferProtocol(r){
   if(!r)return null;
   const r1=Number(r.reps1)||0;
   const r2=Number(r.reps2)||0;
-  const s=Number(r.sets)||0;
+  // セットを①②③の個別行に分けて保存するようになったため、合計セット数で判定する。
+  // こうしないと分割前の「8x3」が分割後に「8x1」になり、同プロトコルの過去ログと
+  // 比較できずインジケーター判定とHISTORYのフィルターが分断される。
+  let s=Number(r.sets)||0;
+  extraOf(r).forEach(e=>{s+=Number(e.s)||1;});
   const hasBO=!!(r.bo_w&&r.bo_r);
   const has37=!!(r.f37_w&&r.f37_r);
   if(r2){
@@ -949,17 +1012,31 @@ function lastSummary(r,item){
 let wgExpanded=null; // 展開中の部位（null=閉）
 function weeklySetsHTML(){
   const ws=weekStartStr(T.date),we=addDaysStr(ws,6);
+  const direct={'胸':0,'背中':0,'肩':0,'脚':0,'腕':0};
+  const indirect={'胸':0,'背中':0,'肩':0,'脚':0,'腕':0};
   const counts={'胸':0,'背中':0,'肩':0,'脚':0,'腕':0};
   const byEx={'胸':{},'背中':{},'肩':{},'脚':{},'腕':{}};
   records.forEach(r=>{
     if(r.date<ws||r.date>we)return;
-    const g=exGroup(r.exId);
-    if(!g||counts[g]==null)return;
     const n=recSetCount(r);
     if(n<=0)return;
-    counts[g]+=n;
-    byEx[g][r.exId]=(byEx[g][r.exId]||0)+n;
+    const g=exGroup(r.exId);
+    if(g&&direct[g]!=null){
+      direct[g]+=n;
+      const e=byEx[g][r.exId]||(byEx[g][r.exId]={d:0,i:0});
+      e.d+=n;
+    }
+    // 間接刺激：同じセット数に係数を掛けて別枠で積む
+    const ind=exIndirect(r.exId);
+    if(ind)Object.keys(ind).forEach(ig=>{
+      if(indirect[ig]==null)return;
+      const v=n*ind[ig];
+      indirect[ig]+=v;
+      const e=byEx[ig][r.exId]||(byEx[ig][r.exId]={d:0,i:0});
+      e.i+=v;
+    });
   });
+  GROUPS.forEach(g=>{counts[g]=direct[g]+indirect[g];});
   const tg=getTargets();
   const isCurrentWeek=ws===weekStartStr(todayStr());
   const rows=GROUPS.map(g=>{
@@ -970,15 +1047,15 @@ function weeklySetsHTML(){
     const minPos=Math.min(100,Math.round(t.min/t.max*100));
     const open=wgExpanded===g;
     const bd=open?`<div class="wg-bd">${
-      Object.entries(byEx[g]).sort((a,b)=>b[1]-a[1])
-        .map(([id,n])=>`<div class="wg-bd-row"><span>${esc(exName(id))}</span><span>${n}</span></div>`).join('')
+      Object.entries(byEx[g]).sort((a,b)=>(b[1].d+b[1].i)-(a[1].d+a[1].i))
+        .map(([id,e])=>`<div class="wg-bd-row"><span>${esc(exName(id))}${e.d?'':'<i class="wg-ind-tag">間接</i>'}</span><span>${fmtSets(e.d+e.i)}</span></div>`).join('')
       ||'<div class="wg-bd-row" style="color:var(--text-faint);">記録なし</div>'
     }</div>`:'';
     return `<div class="wg-item">
       <button class="wg-row" data-act="wgToggle" data-g="${g}">
         <span class="wg-name">${g}</span>
         <span class="wg-bar"><i class="wg-min" style="left:${minPos}%"></i><i class="wg-fill ${cls}" style="width:${w}%"></i></span>
-        <span class="wg-num"><b>${c}</b> / ${t.min}–${t.max}</span>
+        <span class="wg-num"><b>${fmtSets(c)}</b> / ${t.min}–${t.max}${indirect[g]?`<em class="wg-split">直${fmtSets(direct[g])}+間${fmtSets(indirect[g])}</em>`:''}</span>
       </button>${bd}
     </div>`;
   }).join('');
@@ -1093,7 +1170,16 @@ function cardHTML(item){
     ${item.f37?`<button class="timer-btn t37" data-act="timer" data-sec="15" data-rounds="4"><span>3/7 ×4 (15s)</span></button>`:''}
   </div>`;
   return `<div class="ex-card" data-card="${id}">
-    <div class="exc-head"><div class="exc-name">${esc(item.name)} ${chips}</div><div class="exc-role">${esc(item.role)}${item.spec?`<br><span style="font-family:var(--mono);font-size:10px;">${esc(item.spec)}</span>`:''}</div></div>
+    <div class="exc-head">
+      <div class="exc-name">${esc(item.name)} ${chips}</div>
+      <div class="exc-right">
+        <div class="exc-role">${esc(item.role)}${item.spec?`<br><span style="font-family:var(--mono);font-size:10px;">${esc(item.spec)}</span>`:''}</div>
+        <div class="exc-ord">
+          <button class="ord-btn" data-act="exUp" data-ex="${id}" aria-label="上へ移動"><span>↑</span></button>
+          <button class="ord-btn" data-act="exDn" data-ex="${id}" aria-label="下へ移動"><span>↓</span></button>
+        </div>
+      </div>
+    </div>
     ${musDots}
     <div class="last-row">${lastHTML}</div>
     ${setRowsHTML(item,c,best)}
@@ -1210,12 +1296,17 @@ function mergedRecordOf(exId,item){
   let s=num(c.s); if(s==null)s=1;
   const hasPendingMain=hlr?(r1!=null):(w!=null||r1!=null);
   if(hasPendingMain){
-    if(rec.weight==null&&rec.reps1==null){
-      rec.weight=hlr?null:w; rec.reps1=r1; rec.reps2=hlr?null:r2; rec.sets=s;
-      rec.vol=hlr?null:mainVolOf(w,r1,r2,s);
-      if(c.rpe!=null)rec.rpe=c.rpe;
-    }else{
-      rec.extra.push({w:hlr?null:w,r1:r1,r2:hlr?null:r2,s:s,rpe:c.rpe!=null?c.rpe:null});
+    // 「セット」は“今まとめて記録する本数”として扱い、保存時に1セットずつの行へ分割する。
+    // 1を入れれば1セットずつ記録する運用、3を入れれば①②③が一度に積まれる。
+    const count=Math.max(1,Math.min(20,Math.round(s)));
+    for(let k=0;k<count;k++){
+      if(rec.weight==null&&rec.reps1==null){
+        rec.weight=hlr?null:w; rec.reps1=r1; rec.reps2=hlr?null:r2; rec.sets=1;
+        rec.vol=hlr?null:mainVolOf(w,r1,r2,1);
+        if(c.rpe!=null)rec.rpe=c.rpe;
+      }else{
+        rec.extra.push({w:hlr?null:w,r1:r1,r2:hlr?null:r2,s:1,rpe:c.rpe!=null?c.rpe:null});
+      }
     }
   }
   const bw=num(c.bw),br=num(c.br);
@@ -1867,6 +1958,8 @@ function bindToday(){
       const sy=window.scrollY;
       renderToday();
       window.scrollTo(0,sy);
+    }else if(act==='exUp'||act==='exDn'){
+      moveExercise(ex,act==='exUp'?-1:1);
     }else if(act==='row'){
       openSetSheet(ex,b.dataset.row);
     }else if(act==='editset'){
@@ -2321,6 +2414,10 @@ function renderSettings(){
           <li>WARN → 重量維持。睡眠・栄養・フォームを見直す</li>
         </ul>
       </div>
+    </div>
+    <div class="panel"><div class="panel-title">間接刺激の換算</div>
+      <div class="set-note">週セット数は直接刺激を1.0、間接刺激を0.5セットとして合算しています。単関節種目（フライ・サイドレイズ・カール等）には間接刺激を設定していません。</div>
+      ${Object.keys(EX_INDIRECT).map(id=>`<div class="legend-row" style="font-size:11px;"><span style="min-width:130px;">${esc(exName(id))}</span><span style="color:var(--text-dim);font-family:var(--mono);">→ ${Object.keys(EX_INDIRECT[id]).map(g=>`${g} ×${EX_INDIRECT[id][g]}`).join(' / ')}</span></div>`).join('')}
     </div>
     <div class="panel"><div class="panel-title">INDICATORS</div>
       ${legends.map(([k,d])=>`<div class="legend-row">${indChip(k)}<span>${d}</span></div>`).join('')}
