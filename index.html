@@ -92,6 +92,19 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .exc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;}
 .exc-name{font-weight:800;font-size:17px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.35;}
 .exc-role{font-size:11px;color:var(--text-faint);text-align:right;flex-shrink:0;line-height:1.5;}
+.pe-pattabs{display:flex;gap:8px;margin-bottom:10px;}
+.pe-pattab{flex:1;min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--bg-elev);
+  font-weight:800;font-size:13px;color:var(--text-dim);}
+.pe-pattab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+/* メニューのパターン切り替え */
+.pat-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;}
+.pat-lab{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--text-faint);margin-right:2px;}
+.pat-btn{min-width:44px;min-height:40px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg-elev);
+  font-family:var(--mono);font-weight:800;font-size:15px;color:var(--text-dim);}
+.pat-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.pat-note{font-size:11px;color:var(--text-faint);margin-left:4px;}
+.pat-week{margin-left:auto;min-height:36px;padding:0 12px;border:1px solid var(--accent-dim);border-radius:10px;
+  color:var(--accent);font-size:11px;font-weight:700;}
 .exc-right{display:flex;align-items:flex-start;gap:6px;flex-shrink:0;}
 .exc-ord{display:flex;flex-direction:column;gap:3px;flex-shrink:0;}
 .ord-btn{width:30px;height:26px;border:1px solid var(--line);border-radius:8px;background:var(--bg-elev);
@@ -399,7 +412,7 @@ textarea.imp-ta{width:100%;min-height:120px;padding:10px;font-size:12px;resize:v
 const LS_KEY='training_log_v1', LS_PREFS='training_log_prefs_v1', LS_DRAFT='training_log_draft_v1';
 // 更新のたびに変える。ホーム画面PWAは古いHTMLを掴んだままになりやすいので、
 // 起動時にサーバ側のこの値と比較して差があれば更新バナーを出す。
-const APP_VERSION='2026-10-10a';
+const APP_VERSION='2026-11-11a';
 const DAYS=['日','月','火','水','木','金','土'];
 const DAY_ORDER=['月','火','水','木','金','土','日'];
 const GROUPS=['胸','背中','肩','脚','腕'];
@@ -802,15 +815,58 @@ function migratePrefsProgram(){
 }
 
 /* ================= PROGRAM ================= */
-function getProgram(){return prefs.program||DEFAULT_PROGRAM;}
-// 並べ替えはユーザー独自のプログラムとして保存する。未編集ならDEFAULTを複製してから触る
-function ensureCustomProgram(){
-  if(!prefs.program)prefs.program=JSON.parse(JSON.stringify(DEFAULT_PROGRAM));
-  return prefs.program;
+/* --- メニューのパターン ---
+   パターン1 = prefs.program（無ければDEFAULT_PROGRAM）
+   パターン2 = prefs.program2（無い間はパターン1と同じ内容を返す。編集した時点で別物になる）
+   どのパターンで行うかは 日別指定(prefs.patDay) > 週の指定(prefs.patWeek) > 週ごとの交互 の順で決まる */
+function getProgramP(p){
+  if(p===2)return prefs.program2||getProgramP(1);
+  return prefs.program||DEFAULT_PROGRAM;
+}
+function programKey(p){return p===2?'program2':'program';}
+function weekDiff(a,b){return Math.round((parseDate(a)-parseDate(b))/(7*86400000));}
+// 週開始日 → その週のパターン。直近の「指定された週」を起点に1→2→1…と交互に数える
+function weekPattern(ws){
+  const m=prefs.patWeek||{};
+  const keys=Object.keys(m).sort();
+  if(!keys.length)return 1;
+  let base=null;
+  keys.forEach(k=>{if(k<=ws)base=k;});
+  if(base==null)base=keys[0];
+  const even=Math.abs(weekDiff(ws,base))%2===0;
+  return even?m[base]:(m[base]===1?2:1);
+}
+function patternFor(date){
+  const d=prefs.patDay&&prefs.patDay[date];
+  if(d===1||d===2)return d;
+  return weekPattern(weekStartStr(date));
+}
+function setDayPattern(date,p){
+  prefs.patDay=prefs.patDay||{};
+  if(weekPattern(weekStartStr(date))===p)delete prefs.patDay[date];
+  else prefs.patDay[date]=p;
+  savePrefs();
+}
+// 週ごと切り替えの起点にする。以降の週はここから1→2→1…と数え直される
+function setWeekPattern(date,p){
+  const ws=weekStartStr(date);
+  prefs.patWeek=prefs.patWeek||{};
+  prefs.patWeek[ws]=p;
+  Object.keys(prefs.patDay||{}).forEach(d=>{if(weekStartStr(d)===ws)delete prefs.patDay[d];});
+  savePrefs();
+}
+function getProgram(){return getProgramP(patternFor(T.date));}
+// 表示中のパターンを先に、もう一方を後に探す（過去の記録が別パターンの種目でも名前を引けるように）
+function patternsInOrder(){const cur=patternFor(T.date);return [cur,cur===1?2:1];}
+// 並べ替えはユーザー独自のプログラムとして保存する。未編集なら現在の内容を複製してから触る
+function ensureCustomProgram(p){
+  const k=programKey(p||1);
+  if(!prefs[k])prefs[k]=JSON.parse(JSON.stringify(getProgramP(p||1)));
+  return prefs[k];
 }
 function moveExercise(exId,dir){
   const day=displayDay();
-  const sess=ensureCustomProgram()[day];
+  const sess=ensureCustomProgram(patternFor(T.date))[day];
   if(!sess||!Array.isArray(sess.items))return;
   const i=sess.items.findIndex(it=>it.id===exId);
   const j=i+dir;
@@ -825,19 +881,23 @@ function moveExercise(exId,dir){
 function getTargets(){return prefs.weeklyTargets||DEFAULT_WEEKLY_TARGETS;}
 function programExList(){
   const seen=new Set(),out=[];
-  const prog=getProgram();
-  DAY_ORDER.forEach(d=>{
-    (prog[d]&&prog[d].items||[]).forEach(it=>{
-      if(!seen.has(it.id)){seen.add(it.id);out.push(it);}
+  patternsInOrder().forEach(p=>{
+    const prog=getProgramP(p);
+    DAY_ORDER.forEach(d=>{
+      (prog[d]&&prog[d].items||[]).forEach(it=>{
+        if(!seen.has(it.id)){seen.add(it.id);out.push(it);}
+      });
     });
   });
   return out;
 }
 function exById(id){
-  const prog=getProgram();
-  for(const d of DAY_ORDER){
-    const it=(prog[d]&&prog[d].items||[]).find(i=>i.id===id);
-    if(it)return it;
+  for(const p of patternsInOrder()){
+    const prog=getProgramP(p);
+    for(const d of DAY_ORDER){
+      const it=(prog[d]&&prog[d].items||[]).find(i=>i.id===id);
+      if(it)return it;
+    }
   }
   return null;
 }
@@ -974,7 +1034,34 @@ function judgeIndicator(rec,pastAll){
 'use strict';
 /* ================= TODAY ================= */
 function displayDay(){return T.overrideDay||dowChar(T.date);}
-function emptyCard(){return {w:'',r1:'',r2:'',s:'',bw:'',br:'',bs:'',fw:'',fr:'',fd:null,rpe:null,cond:null,memo:'',condTouched:false};}
+// セットは最初から3行を並べて見せる。1行＝1セット（重量・レップ・RPE）
+const MAIN_ROWS=3;
+function emptyRow(){return {w:'',r1:'',r2:'',rpe:null};}
+function emptyCard(){
+  return {rows:Array.from({length:MAIN_ROWS},emptyRow),
+    bw:'',br:'',bs:'',fw:'',fr:'',fd:null,cond:null,memo:'',condTouched:false};
+}
+// 旧形式（w/r1/…をカード直下に持つ下書き）を行配列へ移す
+function normalizeCard(c){
+  if(!c)return emptyCard();
+  if(!Array.isArray(c.rows)){
+    c.rows=Array.from({length:MAIN_ROWS},emptyRow);
+    const has=v=>v!==''&&v!=null;
+    if(has(c.w)||has(c.r1))c.rows[0]={w:c.w||'',r1:c.r1||'',r2:c.r2||'',rpe:c.rpe!=null?c.rpe:null};
+  }
+  while(c.rows.length<MAIN_ROWS)c.rows.push(emptyRow());
+  ['w','r1','r2','s','rpe'].forEach(k=>{delete c[k];});
+  return c;
+}
+// 保存済みのメインセット数（旧形式でsets>1の記録もその本数として数える）
+function mainSetsOf(rec){
+  if(!rec)return 0;
+  let n=(rec.reps1!=null||rec.weight!=null)?(Number(rec.sets)||1):0;
+  extraOf(rec).forEach(e=>{n+=Number(e.s)||1;});
+  return n;
+}
+// まだ入力できる空き行の数。3セットに満つまで
+function pendingSlots(exId){return Math.max(0,MAIN_ROWS-mainSetsOf(todayRecOf(exId)));}
 
 function lastRecOf(exId){
   const rs=records.filter(r=>r.exId===exId&&r.date<T.date);
@@ -982,12 +1069,24 @@ function lastRecOf(exId){
 }
 function todayRecOf(exId){return records.find(r=>r.exId===exId&&r.date===T.date)||null;}
 
-function recToCard(r){
+// 記録 → カード状態。前回のセットを1行ずつに展開し、すでに保存済みの本数(skip)ぶんは飛ばす
+function recToCard(r,skip){
+  const str=v=>v!=null?String(v):'';
+  const list=[];
+  if(r.reps1!=null||r.weight!=null){
+    // 旧形式の sets>1 は同条件の繰り返しなので本数ぶん並べる
+    for(let i=0;i<(Number(r.sets)||1);i++)list.push({w:str(r.weight),r1:str(r.reps1),r2:str(r.reps2),rpe:r.rpe!=null?r.rpe:null});
+  }
+  extraOf(r).forEach(e=>{
+    for(let i=0;i<(Number(e.s)||1);i++)list.push({w:str(e.w),r1:str(e.r1),r2:str(e.r2),rpe:e.rpe!=null?e.rpe:null});
+  });
+  const rows=list.slice(skip||0,(skip||0)+MAIN_ROWS);
+  while(rows.length<MAIN_ROWS)rows.push(emptyRow());
   return {
-    w:r.weight!=null?String(r.weight):'', r1:r.reps1!=null?String(r.reps1):'', r2:r.reps2!=null?String(r.reps2):'', s:r.sets!=null?String(r.sets):'',
-    bw:r.bo_w!=null?String(r.bo_w):'', br:r.bo_r!=null?String(r.bo_r):'', bs:r.bo_s!=null?String(r.bo_s):'',
-    fw:r.f37_w!=null?String(r.f37_w):'', fr:r.f37_r!=null?String(r.f37_r):'', fd:fdNorm(r.f37_done),
-    rpe:r.rpe!=null?r.rpe:null, cond:r.condition||null, memo:r.memo||'', condTouched:!!r.condition
+    rows,
+    bw:str(r.bo_w), br:str(r.bo_r), bs:str(r.bo_s),
+    fw:str(r.f37_w), fr:str(r.f37_r), fd:fdNorm(r.f37_done),
+    cond:r.condition||null, memo:r.memo||'', condTouched:!!r.condition
   };
 }
 
@@ -1089,19 +1188,21 @@ function setRowsHTML(item,c,best){
       <span class="sr-vals">${vals}</span>
       <span class="sr-check on">✓</span>
     </button>`;
+  // 「セット」列は旧形式（1行に複数セットをまとめた記録）のときだけ出す
+  const setsCol=s=>(Number(s)>1?val(s,'セット'):'');
   if(saved){
     if(saved.reps1!=null||saved.weight!=null){
-      idx++;
+      idx+=Number(saved.sets)||1;
       const reps=saved.reps2!=null?`${fmtN(saved.reps1)}+${fmtN(saved.reps2)}`:fmtN(saved.reps1);
       html+=savedRow(String(idx),
-        `${hlr?'':val(saved.weight,'KG')}${val(reps,'レップ')}${val(saved.sets,'セット')}${hlr?'':val(saved.rpe,'RPE')}`,
+        `${hlr?'':val(saved.weight,'KG')}${val(reps,'レップ')}${setsCol(saved.sets)}${hlr?'':val(saved.rpe,'RPE')}`,
         'main', best);
     }
     extraOf(saved).forEach((e,i)=>{
-      idx++;
+      idx+=Number(e.s)||1;
       const reps=(e.r2!=null&&e.r2!=='')?`${fmtN(num(e.r1))}+${fmtN(num(e.r2))}`:fmtN(num(e.r1));
       html+=savedRow(String(idx),
-        `${hlr?'':val(e.w,'KG')}${val(reps,'レップ')}${val(e.s,'セット')}${hlr?'':val(e.rpe,'RPE')}`,
+        `${hlr?'':val(e.w,'KG')}${val(reps,'レップ')}${setsCol(e.s)}${hlr?'':val(e.rpe,'RPE')}`,
         'extra:'+i, false);
     });
     if(saved.bo_w!=null){
@@ -1113,19 +1214,22 @@ function setRowsHTML(item,c,best){
     }
   }
 
-  // ---- これから入力する行（保存すると上の保存済みへ移り、ここは空に戻る）----
-  const repsMain=has(c.r1)?(has(c.r2)?`${c.r1}+${c.r2}`:c.r1):'';
-  const mainFilled=hlr?has(c.r1):(has(c.w)||has(c.r1));
-  html+=`<button class="set-row pending ${mainFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="main">
-    <span class="sr-idx next">${idx+1}</span>
-    <span class="sr-vals">
-      ${hlr?'':val(c.w,'KG')}
-      ${val(repsMain,'レップ')}
-      ${val(c.s,'セット')}
-      ${hlr?'':val(c.rpe!=null?c.rpe:'','RPE')}
-    </span>
-    <span class="sr-check ${mainFilled?'on':''}">✓</span>
-  </button>`;
+  // ---- これから入力する行。最初から3行並び、保存済みの本数ぶんだけ減る ----
+  const slots=pendingSlots(item.id);
+  for(let k=0;k<slots;k++){
+    const r=(c.rows&&c.rows[k])||emptyRow();
+    const repsMain=has(r.r1)?(has(r.r2)?`${r.r1}+${r.r2}`:r.r1):'';
+    const mainFilled=hlr?has(r.r1):(has(r.w)||has(r.r1));
+    html+=`<button class="set-row pending ${mainFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="main:${k}">
+      <span class="sr-idx next">${idx+k+1}</span>
+      <span class="sr-vals">
+        ${hlr?'':val(r.w,'KG')}
+        ${val(repsMain,'レップ')}
+        ${hlr?'':val(r.rpe!=null?r.rpe:'','RPE')}
+      </span>
+      <span class="sr-check ${mainFilled?'on':''}">✓</span>
+    </button>`;
+  }
   if(item.bo&&!(saved&&saved.bo_w!=null)){
     const boFilled=has(c.bw)&&has(c.br);
     html+=`<button class="set-row pending ${boFilled?'filled':''}" data-act="row" data-ex="${item.id}" data-row="bo">
@@ -1211,6 +1315,13 @@ function renderToday(){
     const off=!p||!p.items.length;
     return `<button class="day-tab ${d===day?'active':''}" data-act="dayTab" data-day="${d}" title="${esc(p?p.title:'')}">${d===actualDay?'<span class="cur-dot"></span>':''}<span style="opacity:${off?0.45:1}">${d}</span></button>`;
   }).join('');
+  const pat=patternFor(T.date),patAuto=weekPattern(weekStartStr(T.date));
+  const patHTML=`<div class="pat-row">
+    <span class="pat-lab">PATTERN</span>
+    ${[1,2].map(p=>`<button class="pat-btn ${p===pat?'active':''}" data-act="pat" data-p="${p}"><span>${p}</span></button>`).join('')}
+    <span class="pat-note">${pat===patAuto?`今週は自動で ${patAuto}`:`この日だけ ${pat}（今週は ${patAuto}）`}</span>
+    ${pat!==patAuto?`<button class="pat-week" data-act="patWeek"><span>今週すべて${pat}にする</span></button>`:''}
+  </div>`;
   const ovrHTML=T.overrideDay?`<div class="ovr-banner"><span><b>CUSTOM</b>${esc(actualDay)}曜に「${esc(sess.title)}」（${esc(T.overrideDay)}）メニューを実施</span><button id="ovrReset">RESET</button></div>`:'';
   const cardsHTML=sess.items.length
     ? sess.items.map(cardHTML).join('')
@@ -1224,6 +1335,7 @@ function renderToday(){
         <div class="day-pill">${actualDay}</div>
       </div>
       <div class="day-tabs" style="margin-bottom:0;">${dayTabs}</div>
+      ${patHTML}
       <div style="margin-top:10px;font-size:12px;color:var(--text-dim);"><b style="font-family:var(--serif);color:var(--text);">${esc(sess.title)}</b>${sess.sub?` <span style="color:var(--text-faint);">· ${esc(sess.sub)}</span>`:''}</div>
     </div>
     ${ovrHTML}
@@ -1292,23 +1404,20 @@ function mergedRecordOf(exId,item){
   const rec=saved?JSON.parse(JSON.stringify(saved)):blankRecord(exId);
   if(!Array.isArray(rec.extra))rec.extra=[];
 
-  const w=num(c.w),r1=num(c.r1),r2=num(c.r2);
-  let s=num(c.s); if(s==null)s=1;
-  const hasPendingMain=hlr?(r1!=null):(w!=null||r1!=null);
-  if(hasPendingMain){
-    // 「セット」は“今まとめて記録する本数”として扱い、保存時に1セットずつの行へ分割する。
-    // 1を入れれば1セットずつ記録する運用、3を入れれば①②③が一度に積まれる。
-    const count=Math.max(1,Math.min(20,Math.round(s)));
-    for(let k=0;k<count;k++){
-      if(rec.weight==null&&rec.reps1==null){
-        rec.weight=hlr?null:w; rec.reps1=r1; rec.reps2=hlr?null:r2; rec.sets=1;
-        rec.vol=hlr?null:mainVolOf(w,r1,r2,1);
-        if(c.rpe!=null)rec.rpe=c.rpe;
-      }else{
-        rec.extra.push({w:hlr?null:w,r1:r1,r2:hlr?null:r2,s:1,rpe:c.rpe!=null?c.rpe:null});
-      }
+  // 入力済みの行を上から順に1セットずつ積む（空き行の数＝まだ入力できる本数）
+  (c.rows||[]).slice(0,pendingSlots(exId)).forEach(row=>{
+    const w=num(row.w),r1=num(row.r1),r2=num(row.r2);
+    const rpe=row.rpe!=null?row.rpe:null;
+    const filled=hlr?(r1!=null):(w!=null||r1!=null);
+    if(!filled)return;
+    if(rec.weight==null&&rec.reps1==null){
+      rec.weight=hlr?null:w; rec.reps1=r1; rec.reps2=hlr?null:r2; rec.sets=1;
+      rec.vol=hlr?null:mainVolOf(w,r1,r2,1);
+      if(rpe!=null)rec.rpe=rpe;
+    }else{
+      rec.extra.push({w:hlr?null:w,r1:r1,r2:hlr?null:r2,s:1,rpe:rpe});
     }
-  }
+  });
   const bw=num(c.bw),br=num(c.br);
   if(rec.bo_w==null&&bw!=null&&br!=null){
     rec.bo_w=bw;rec.bo_r=br;rec.bo_s=num(c.bs)!=null?num(c.bs):1;
@@ -1332,8 +1441,9 @@ function hasPendingInput(exId,item){
   const c=T.cards[exId];
   if(!c)return false;
   const hlr=isHLR(item||exById(exId)||{id:exId});
-  if(hlr)return num(c.r1)!=null;
-  return num(c.w)!=null||num(c.r1)!=null||(num(c.bw)!=null&&num(c.br)!=null)||num(c.fw)!=null;
+  const mainIn=(c.rows||[]).slice(0,pendingSlots(exId)).some(r=>hlr?num(r.r1)!=null:(num(r.w)!=null||num(r.r1)!=null));
+  if(hlr)return mainIn;
+  return mainIn||(num(c.bw)!=null&&num(c.br)!=null)||num(c.fw)!=null;
 }
 
 function markDirty(){
@@ -1360,7 +1470,8 @@ function copyLast(exId){
   if(!last){toast('前回記録がありません');return;}
   const c=T.cards[exId];
   const keep={cond:c.cond,condTouched:c.condTouched,memo:c.memo};
-  const nc=recToCard(last);
+  // すでに保存済みのセットぶんは飛ばし、前回の続きの行からコピーする
+  const nc=recToCard(last,mainSetsOf(todayRecOf(exId)));
   nc.cond=keep.cond;nc.condTouched=keep.condTouched;nc.memo=keep.memo; // 体調・メモはコピーしない
   T.cards[exId]=nc;
   refreshCard(exId);
@@ -1414,7 +1525,7 @@ function saveLog(){
   sess.items.forEach(it=>{
     const c=T.cards[it.id];
     if(!c)return;
-    c.w='';c.r1='';c.r2='';c.s='';c.rpe=null;
+    c.rows=Array.from({length:MAIN_ROWS},emptyRow);
     c.bw='';c.br='';c.bs='';
     c.fw='';c.fr='';c.fd=null;
     if(c.cond)c.condTouched=true;
@@ -1456,37 +1567,49 @@ function closeSheet(){
 
 /* ---- セット編集シート ---- */
 const SHEET_FIELDS={
-  main:[{k:'w',label:'KG'},{k:'r1',label:'レップ¹'},{k:'r2',label:'レップ²'},{k:'s',label:'セット'},{k:'rpe',label:'RPE',rpe:true}],
-  mainHlr:[{k:'r1',label:'レップ'},{k:'s',label:'セット'}],
+  main:[{k:'w',label:'KG'},{k:'r1',label:'レップ¹'},{k:'r2',label:'レップ²'},{k:'rpe',label:'RPE',rpe:true}],
+  mainHlr:[{k:'r1',label:'レップ'}],
   bo:[{k:'bw',label:'BO KG'},{k:'br',label:'BO レップ'},{k:'bs',label:'BO セット'}],
   f37:[{k:'fw',label:'3/7 KG'},{k:'fr',label:'3/7 レップ'}]
 };
 const FIELD_DEFS={w:{step:2.5,min:0},r1:{step:1,min:0},r2:{step:1,min:0},s:{step:1,min:0},rpe:{step:1,min:6,max:10},bw:{step:2.5,min:0},br:{step:1,min:0},bs:{step:1,min:0},fw:{step:2.5,min:0},fr:{step:1,min:0}};
 const FIELD_TO_REC={w:'weight',r1:'reps1',r2:'reps2',s:'sets',bw:'bo_w',br:'bo_r',bs:'bo_s',fw:'f37_w',fr:'f37_r'};
 let sheetCtx=null;
+// row は 'main:0'〜'main:2'（メインセットの空き行）／'bo'／'f37'。
+// メインセットは行ごとの値(c.rows[k])を、BO・3/7はカード直下(c)を編集する
+function rowKind(row){return String(row).startsWith('main:')?'main':row;}
+function sheetCell(c,row){
+  if(rowKind(row)!=='main')return c;
+  const k=+String(row).split(':')[1];
+  if(!Array.isArray(c.rows))c.rows=Array.from({length:MAIN_ROWS},emptyRow);
+  return c.rows[k]||(c.rows[k]=emptyRow());
+}
 function openSetSheet(exId,row){
   const item=exById(exId);
   if(!item)return;
   if(!T.cards[exId])T.cards[exId]=emptyCard();
   sheetCtx={exId,row};
   const c=T.cards[exId];
-  const fields=row==='main'?(isHLR(item)?SHEET_FIELDS.mainHlr:SHEET_FIELDS.main):SHEET_FIELDS[row];
-  const title=row==='main'?esc(item.name):(row==='bo'?'バックオフセット':'3/7法');
+  const kind=rowKind(row);
+  const cell=sheetCell(c,row);
+  const fields=kind==='main'?(isHLR(item)?SHEET_FIELDS.mainHlr:SHEET_FIELDS.main):SHEET_FIELDS[kind];
+  const setNo=kind==='main'?mainSetsOf(todayRecOf(exId))+(+String(row).split(':')[1])+1:0;
+  const title=kind==='main'?`${esc(item.name)} · セット${setNo}`:(kind==='bo'?'バックオフセット':'3/7法');
   const rowsHTML=fields.map(f=>{
-    let v=f.k==='rpe'?(c.rpe!=null?c.rpe:''):(c[f.k]!=null?c[f.k]:'');
+    let v=f.k==='rpe'?(cell.rpe!=null?cell.rpe:''):(cell[f.k]!=null?cell[f.k]:'');
     return `<div class="st-row">
       <button class="st-btn" data-sact="dec" data-k="${f.k}"><span>−</span></button>
       <div class="st-mid"><input type="number" step="any" inputmode="decimal" data-sk="${f.k}" value="${esc(String(v))}" placeholder="—"><label>${f.label}${f.rpe&&item.rpe?`（目標 ${item.rpe}）`:''}</label></div>
       <button class="st-btn" data-sact="inc" data-k="${f.k}"><span>＋</span></button>
     </div>${f.rpe?'<div class="st-hint" id="rpeHint"></div>':''}`;
   }).join('');
-  const doneHTML=row==='f37'?`<div class="st-done-row">
+  const doneHTML=kind==='f37'?`<div class="st-done-row">
       <button class="st-done-btn ${c.fd===1?'sel-yes':''}" data-sact="fd" data-v="1"><span>✓ 完遂</span></button>
       <button class="st-done-btn ${c.fd===0?'sel-no':''}" data-sact="fd" data-v="0"><span>✗ 未達</span></button>
       <button class="st-done-btn ${c.fd==null?'sel-none':''}" data-sact="fd" data-v=""><span>—</span></button>
     </div>`:'';
   openSheet(`<h3>${title}</h3>
-    ${row==='main'&&item.spec?`<div class="sheet-sub">${esc(item.spec)}</div>`:''}
+    ${kind==='main'&&item.spec?`<div class="sheet-sub">${esc(item.spec)}</div>`:''}
     ${rowsHTML}${doneHTML}
     <div class="sheet-foot">
       <button data-sact="copy"><span>前回をコピー</span></button>
@@ -1499,18 +1622,28 @@ function openSetSheet(exId,row){
 function updateRpeHint(){
   const el=document.getElementById('rpeHint');
   if(!el||!sheetCtx)return;
-  const rpe=num(T.cards[sheetCtx.exId].rpe);
+  const rpe=num(sheetCell(T.cards[sheetCtx.exId],sheetCtx.row).rpe);
   el.textContent=rpe!=null?(rpe>=10?'限界ギリギリ':`あと${10-rpe}レップはできる`):'';
 }
 function sheetStep(k,dir){
   if(!sheetCtx)return;
   const exId=sheetCtx.exId;
   const c=T.cards[exId];
+  const cell=sheetCell(c,sheetCtx.row);
   const item=exById(exId);
   const def=FIELD_DEFS[k]||{step:1,min:0};
-  let base=k==='rpe'?(c.rpe!=null?c.rpe:null):num(c[k]);
+  let base=k==='rpe'?(cell.rpe!=null?cell.rpe:null):num(cell[k]);
+  if(base==null&&rowKind(sheetCtx.row)==='main'){
+    // 空なら直前の行（同じカードの1つ上のセット）をそのまま起点にする
+    const idx=+String(sheetCtx.row).split(':')[1];
+    const prev=idx>0?c.rows[idx-1]:null;
+    if(prev){
+      const pv=k==='rpe'?prev.rpe:num(prev[k]);
+      if(pv!=null&&pv!=='')base=Number(pv);
+    }
+  }
   if(base==null){
-    // 空なら前回値ベース
+    // それも無ければ前回の記録を起点にする
     const last=lastRecOf(exId);
     if(k==='rpe')base=(last&&last.rpe!=null)?last.rpe:((item&&item.rpe)||8);
     else base=(last&&last[FIELD_TO_REC[k]]!=null)?Number(last[FIELD_TO_REC[k]]):0;
@@ -1519,7 +1652,7 @@ function sheetStep(k,dir){
   if(def.min!=null)v=Math.max(def.min,v);
   if(def.max!=null)v=Math.min(def.max,v);
   v=Math.round(v*100)/100;
-  if(k==='rpe')c.rpe=v;else c[k]=String(v);
+  if(k==='rpe')cell.rpe=v;else cell[k]=String(v);
   const inp=document.querySelector(`#sheetRoot input[data-sk="${k}"]`);
   if(inp)inp.value=String(v);
   vibrate(20);
@@ -1531,7 +1664,10 @@ function clearSheetRow(){
   if(!sheetCtx)return;
   const {exId,row}=sheetCtx;
   const c=T.cards[exId];
-  if(row==='main'){c.w='';c.r1='';c.r2='';c.s='';c.rpe=null;}
+  if(rowKind(row)==='main'){
+    const k=+String(row).split(':')[1];
+    c.rows[k]=emptyRow();
+  }
   else if(row==='bo'){c.bw='';c.br='';c.bs='';}
   else{c.fw='';c.fr='';c.fd=null;}
   markDirty();
@@ -1807,9 +1943,9 @@ function bindSheet(){
     if(t.dataset.ek&&editCtx){editCtx.vals[t.dataset.ek]=num(t.value);return;}
     const sk=t.dataset.sk;
     if(!sk||!sheetCtx)return;
-    const c=T.cards[sheetCtx.exId];
-    if(sk==='rpe')c.rpe=num(t.value);
-    else c[sk]=t.value;
+    const cell=sheetCell(T.cards[sheetCtx.exId],sheetCtx.row);
+    if(sk==='rpe')cell.rpe=num(t.value);
+    else cell[sk]=t.value;
     markDirty();
     refreshCard(sheetCtx.exId);
     if(sk==='rpe')updateRpeHint();
@@ -1953,6 +2089,19 @@ function bindToday(){
       const d=b.dataset.day;
       T.overrideDay=(d===dowChar(T.date))?null:d;
       renderToday();
+    }else if(act==='pat'){
+      const p=+b.dataset.p;
+      if(p===patternFor(T.date))return;
+      // 入力途中のセットがあると、切り替え先に無い種目の分は保存されなくなるので確認する
+      const cur=(getProgram()[displayDay()]||{items:[]}).items;
+      if(cur.some(it=>hasPendingInput(it.id,it))&&!confirm('入力途中のセットがあります。パターンを切り替えると、切り替え先に無い種目の入力は保存されません。切り替えますか？'))return;
+      setDayPattern(T.date,p);
+      renderToday();
+    }else if(act==='patWeek'){
+      const p=patternFor(T.date);
+      setWeekPattern(T.date,p);
+      renderToday();
+      toast(`今週すべてパターン${p}にしました。来週は${p===1?2:1}になります`);
     }else if(act==='wgToggle'){
       wgExpanded=(wgExpanded===b.dataset.g)?null:b.dataset.g;
       const sy=window.scrollY;
@@ -2400,7 +2549,7 @@ function renderSettings(){
     </div>
     <div class="panel"><div class="panel-title">PROGRAM</div>
       <button class="set-btn" id="btnTargets"><span>週セット数目標を編集</span><small>部位別 min–max</small></button>
-      <button class="set-btn" id="btnProgram"><span>種目・曜日メニューを編集</span><small>${prefs.program?'カスタム':'デフォルト'}</small></button>
+      <button class="set-btn" id="btnProgram"><span>種目・曜日メニューを編集</span><small>パターン1${prefs.program?'カスタム':'デフォルト'} / 2${prefs.program2?'カスタム':'＝1と同じ'}</small></button>
       <button class="set-btn" id="btnResetProg"><span>デフォルトに戻す</span><small>プログラム＋目標</small></button>
     </div>
     <div class="panel"><div class="panel-title">PROTOCOL</div>
@@ -2463,7 +2612,7 @@ function bindSettings(){
       case 'btnProgram':openProgramEditor();break;
       case 'btnResetProg':
         if(confirm('プログラムと週セット数目標をデフォルトに戻します。よろしいですか？')){
-          delete prefs.program;delete prefs.weeklyTargets;savePrefs();
+          delete prefs.program;delete prefs.program2;delete prefs.weeklyTargets;savePrefs();
           toast('デフォルトに戻しました');renderSettings();
         }
         break;
@@ -2495,14 +2644,21 @@ function openTargets(){
 
 /* --- program editor --- */
 let exEdit=null;
+let progEditAll=null, progEditPat=1, progP2Original='';
 function openProgramEditor(){
-  progEdit=JSON.parse(JSON.stringify(getProgram()));
+  progEditAll={1:JSON.parse(JSON.stringify(getProgramP(1))),2:JSON.parse(JSON.stringify(getProgramP(2)))};
+  // パターン2が未編集（パターン1を映しているだけ）なら、触らない限り保存しない
+  progP2Original=prefs.program2?'':JSON.stringify(progEditAll[2]);
+  progEditPat=patternFor(T.date);
+  progEdit=progEditAll[progEditPat];
   progEditDay=DAY_ORDER.includes(progEditDay)?progEditDay:'月';
   renderProgEditor();
 }
 function renderProgEditor(){
   const day=progEdit[progEditDay]||(progEdit[progEditDay]={title:'',sub:'',items:[]});
   openModal(`<h3>プログラム編集</h3>
+    <div class="pe-pattabs">${[1,2].map(p=>`<button class="pe-pattab ${p===progEditPat?'active':''}" data-mact="pePat" data-p="${p}"><span>パターン${p}</span></button>`).join('')}</div>
+    ${progEditPat===2&&progP2Original&&JSON.stringify(progEditAll[2])===progP2Original?'<div class="set-note" style="margin:-4px 0 10px;">パターン2は今パターン1と同じ内容です。補助種目などを変えると、ここから別メニューになります。</div>':''}
     <div class="pe-daytabs">${DAY_ORDER.map(d=>`<button class="pe-daytab ${d===progEditDay?'active':''}" data-mact="peDay" data-day="${d}"><span>${d}</span></button>`).join('')}</div>
     <div class="m-2col">
       <div class="m-field"><label>セッション名</label><input id="peTitle" value="${esc(day.title)}"></div>
@@ -2587,6 +2743,12 @@ function bindModal(){
         break;
       }
       case 'peDay':syncPeInputs();progEditDay=b.dataset.day;renderProgEditor();break;
+      case 'pePat':
+        syncPeInputs();
+        progEditPat=+b.dataset.p;
+        progEdit=progEditAll[progEditPat];
+        renderProgEditor();
+        break;
       case 'peUp':case 'peDn':{
         syncPeInputs();
         const i=+b.dataset.i,items=progEdit[progEditDay].items;
@@ -2607,7 +2769,10 @@ function bindModal(){
       case 'peAdd':syncPeInputs();openExEditor(null);break;
       case 'peSave':
         syncPeInputs();
-        prefs.program=progEdit;savePrefs();
+        prefs.program=progEditAll[1];
+        // パターン2を一度も触っていなければ作らない（パターン1と同じ内容を映したままにする）
+        if(prefs.program2||JSON.stringify(progEditAll[2])!==progP2Original)prefs.program2=progEditAll[2];
+        savePrefs();
         closeModal();toast('プログラムを保存しました');
         renderSettings();
         break;
@@ -2673,9 +2838,15 @@ function init(){
   if(draft&&draft.date===T.date){
     T.overrideDay=draft.overrideDay||null;
     T.cards=draft.cards||{};
+    Object.keys(T.cards).forEach(id=>{T.cards[id]=normalizeCard(T.cards[id]);});
     T.dirty=true;
   }else if(draft){
     clearDraft(); // 古い日付の下書きは破棄
+  }
+  // 週ごとの交互切り替えの起点。初めて使う週を「パターン1」として数え始める
+  if(!prefs.patWeek||!Object.keys(prefs.patWeek).length){
+    prefs.patWeek={[weekStartStr(todayStr())]:1};
+    savePrefs();
   }
   $('#headDate').textContent=`${todayStr().replace(/-/g,'.')} ${dowChar(todayStr())}`;
   if(window.Chart){
